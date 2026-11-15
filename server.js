@@ -24,6 +24,7 @@ const { URL } = require('url');
 
 const ROOT = __dirname;
 const ENV_FILE = path.join(ROOT, '.env');
+const IS_VERCEL = !!process.env.VERCEL;
 
 // .env faylini o'qish (KEY=VALUE). Muhit o'zgaruvchisi allaqachon berilgan bo'lsa, u ustun turadi.
 function loadEnvFile() {
@@ -42,6 +43,8 @@ function loadEnvFile() {
 function resolveAdminPassword() {
   loadEnvFile();
   if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
+  // Vercel'da fayl yozib bo'lmaydi: parol Vercel muhit o'zgaruvchisi (ADMIN_PASSWORD) orqali beriladi
+  if (IS_VERCEL) return '';
   const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
   let pw = '';
   for (let i = 0; i < 16; i++) pw += ALPHA[crypto.randomInt(ALPHA.length)];
@@ -56,14 +59,21 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const MAX_BODY = 1024 * 1024; // ~1MB
 
-// Kirish tokenlari: token -> amal qilish muddati (ms). 12 soatdan keyin eskiradi.
-const TOKEN_TTL = 12 * 60 * 60 * 1000;
-const tokens = new Map();
+// Saqlash: Upstash Redis (Vercel) yoki lokal JSON fayllar.
+// Vercel Marketplace'dagi Upstash integratsiyasi KV_REST_API_URL / KV_REST_API_TOKEN ni o'zi qo'shadi.
+const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '';
+const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
+const USE_KV = !!(KV_URL && KV_TOKEN);
+const KV_PREFIX = 'oquv:';
 
-// Parolni taxmin qilishdan himoya: bir IP dan 5 ta noto'g'ri urinish -> 15 daqiqa blok.
+// Kirish tokenlari 12 soatdan keyin eskiradi.
+const TOKEN_TTL = 12 * 60 * 60 * 1000;
+const tokens = new Map(); // faqat lokal rejimda: token -> amal qilish muddati
+
+// Parolni taxmin qilishdan himoya: bir IP dan 5 ta noto'g'ri urinish -> oxirgi urinishdan 15 daqiqa blok.
 const MAX_FAILS = 5;
 const BLOCK_MS = 15 * 60 * 1000;
-const loginFails = new Map(); // ip -> { count, until }
+const loginFails = new Map(); // faqat lokal rejimda: ip -> { count, expires }
 
 // ---------------------------------------------------------------- Seed ma'lumot
 const SEED = {
@@ -117,24 +127,112 @@ function writeAtomic(name, data) {
   }
 }
 
-function load(name) {
+const clone = (v) => JSON.parse(JSON.stringify(v));
+
+// Upstash Redis REST: buyruq JSON massiv sifatida yuboriladi, masalan ["GET", "kalit"]
+async function kv(...cmd) {
+  const r = await fetch(KV_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(cmd)
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error('Redis xatosi: ' + (j.error || r.status));
+  return j.result;
+}
+
+async function load(name) {
+  if (USE_KV) {
+    const key = KV_PREFIX + name;
+    let raw = await kv('GET', key);
+    if (raw == null) {
+      // Birinchi marta: seed bilan to'ldiramiz (NX — parallel so'rovda ustiga yozmaslik uchun)
+      await kv('SET', key, JSON.stringify(SEED[name]), 'NX');
+      raw = await kv('GET', key);
+    }
+    try { const p = JSON.parse(raw); if (Array.isArray(p)) return p; } catch (_) { /* pastga */ }
+    return clone(SEED[name]);
+  }
+  if (IS_VERCEL) return clone(SEED[name]); // baza ulanmagan: faqat o'qish (seed)
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath(name), 'utf8'));
     if (Array.isArray(parsed)) return parsed;
   } catch (_) { /* yo'q yoki buzilgan — seed bilan qayta yaratamiz */ }
-  const seed = JSON.parse(JSON.stringify(SEED[name]));
+  const seed = clone(SEED[name]);
   writeAtomic(name, seed);
   return seed;
 }
 
-function save(name, data) {
+async function save(name, data) {
+  if (USE_KV) { await kv('SET', KV_PREFIX + name, JSON.stringify(data)); return; }
+  if (IS_VERCEL) throw new HttpError(503, "Ma'lumotlar bazasi ulanmagan (Upstash Redis sozlanmagan)");
   writeAtomic(name, data);
+}
+
+// --- Sessiyalar (admin tokenlari)
+async function createSession(token) {
+  if (USE_KV) return kv('SET', KV_PREFIX + 'sess:' + token, '1', 'PX', TOKEN_TTL);
+  const now = Date.now();
+  for (const [t, exp] of tokens) if (exp < now) tokens.delete(t); // eskirganlarni tozalash
+  tokens.set(token, now + TOKEN_TTL);
+}
+async function hasSession(token) {
+  if (!token) return false;
+  if (USE_KV) return (await kv('GET', KV_PREFIX + 'sess:' + token)) !== null;
+  const exp = tokens.get(token);
+  if (exp && exp < Date.now()) tokens.delete(token);
+  return !!exp && exp >= Date.now();
+}
+async function deleteSession(token) {
+  if (USE_KV) return kv('DEL', KV_PREFIX + 'sess:' + token);
+  tokens.delete(token);
+}
+
+// --- Noto'g'ri urinishlar (IP bo'yicha)
+// Qaytaradi: blok qolgan vaqti (ms) yoki 0
+async function blockedFor(ip) {
+  if (USE_KV) {
+    const key = KV_PREFIX + 'fail:' + ip;
+    const count = Number(await kv('GET', key)) || 0;
+    if (count < MAX_FAILS) return 0;
+    return Math.max(Number(await kv('PTTL', key)) || 0, 0);
+  }
+  const rec = loginFails.get(ip);
+  if (!rec || rec.expires < Date.now()) { loginFails.delete(ip); return 0; }
+  return rec.count >= MAX_FAILS ? rec.expires - Date.now() : 0;
+}
+// Qaytaradi: hozirgi urinishlar soni
+async function recordFail(ip) {
+  if (USE_KV) {
+    const key = KV_PREFIX + 'fail:' + ip;
+    const count = await kv('INCR', key);
+    await kv('PEXPIRE', key, BLOCK_MS);
+    return count;
+  }
+  const now = Date.now();
+  const rec = loginFails.get(ip);
+  const count = (rec && rec.expires >= now ? rec.count : 0) + 1;
+  loginFails.set(ip, { count, expires: now + BLOCK_MS });
+  return count;
+}
+async function clearFails(ip) {
+  if (USE_KV) return kv('DEL', KV_PREFIX + 'fail:' + ip);
+  loginFails.delete(ip);
+}
+
+function clientIp(req) {
+  // Vercel'da haqiqiy IP x-forwarded-for da (uni Vercel o'zi qo'yadi); lokalda socket manzili
+  if (IS_VERCEL) {
+    const xf = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (xf) return xf;
+  }
+  return req.socket && req.socket.remoteAddress || 'unknown';
 }
 
 function initData() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   for (const name of Object.keys(SEED)) {
-    if (!fs.existsSync(filePath(name))) writeAtomic(name, JSON.parse(JSON.stringify(SEED[name])));
+    if (!fs.existsSync(filePath(name))) writeAtomic(name, clone(SEED[name]));
   }
 }
 
@@ -147,13 +245,13 @@ function newAppId(apps) {
 }
 
 // Eski formatdagi (masalan "a1") ariza ID larini 6 xonali raqamga o'tkazadi — server ishga tushganda bir marta
-function migrateApplicationIds() {
-  const apps = load('applications');
+async function migrateApplicationIds() {
+  const apps = await load('applications');
   let changed = false;
   for (const a of apps) {
     if (!/^\d{6}$/.test(String(a.id))) { a.id = newAppId(apps); changed = true; }
   }
-  if (changed) save('applications', apps);
+  if (changed) await save('applications', apps);
 }
 
 function newId(prefix) {
@@ -176,6 +274,19 @@ function sendJson(res, status, data) {
 }
 
 function readBody(req) {
+  // Vercel body'ni o'zi o'qib req.body ga qo'yadi
+  if (IS_VERCEL) {
+    let b;
+    try { b = req.body; } catch (_) { return Promise.reject(new HttpError(400, "Noto'g'ri JSON")); }
+    if (Buffer.isBuffer(b)) b = b.toString('utf8');
+    if (typeof b === 'string') {
+      if (!b.trim()) return Promise.resolve({});
+      try { b = JSON.parse(b); } catch (_) { return Promise.reject(new HttpError(400, "Noto'g'ri JSON")); }
+    }
+    if (b == null) return Promise.resolve({});
+    if (typeof b !== 'object' || Array.isArray(b)) return Promise.reject(new HttpError(400, "Body JSON obyekt bo'lishi kerak"));
+    return Promise.resolve(b);
+  }
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -208,15 +319,13 @@ function readBody(req) {
   });
 }
 
-function requireAuth(req) {
-  const h = req.headers['authorization'] || '';
-  const m = /^Bearer\s+(.+)$/i.exec(h);
-  const token = m ? m[1].trim() : '';
-  const exp = tokens.get(token);
-  if (!exp || exp < Date.now()) {
-    if (exp) tokens.delete(token);
-    throw new HttpError(401, 'Avtorizatsiya talab qilinadi');
-  }
+function bearer(req) {
+  const m = /^Bearer\s+([A-Za-z0-9]+)$/i.exec(String(req.headers['authorization'] || '').trim());
+  return m ? m[1] : '';
+}
+
+async function requireAuth(req) {
+  if (!(await hasSession(bearer(req)))) throw new HttpError(401, 'Avtorizatsiya talab qilinadi');
 }
 
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest();
@@ -231,7 +340,7 @@ function toNumber(v) {
 }
 
 // ---------------------------------------------------------------- Validatsiya
-function validateCourse(input, existing) {
+async function validateCourse(input, existing) {
   const base = existing || {};
   const pick = (k) => (input[k] !== undefined ? input[k] : base[k]);
   const c = {
@@ -251,7 +360,7 @@ function validateCourse(input, existing) {
   if (!c.teacherId) {
     if (existing && c.teacherId === null) { /* ustoz o'chirilgan kurs — ruxsat */ }
     else throw new HttpError(400, 'Ustoz tanlanishi shart');
-  } else if (!load('teachers').some((t) => t.id === c.teacherId)) {
+  } else if (!(await load('teachers')).some((t) => t.id === c.teacherId)) {
     throw new HttpError(400, 'Bunday ustoz mavjud emas');
   }
   return c;
@@ -268,73 +377,69 @@ async function handleApi(req, res, pathname) {
   // --- login
   if (resource === 'login' && !id) {
     if (method !== 'POST') throw new HttpError(405, 'Metod ruxsat etilmagan');
-    const ip = req.socket.remoteAddress || 'unknown';
-    const now = Date.now();
-    const rec = loginFails.get(ip);
-    if (rec && rec.until > now) {
-      const min = Math.ceil((rec.until - now) / 60000);
-      throw new HttpError(429, `Juda ko'p noto'g'ri urinish. ${min} daqiqadan keyin qayta urinib ko'ring`);
+    if (!ADMIN_PASSWORD) throw new HttpError(503, 'Admin paroli sozlanmagan (ADMIN_PASSWORD)');
+    const ip = clientIp(req);
+    const left = await blockedFor(ip);
+    if (left > 0) {
+      throw new HttpError(429, `Juda ko'p noto'g'ri urinish. ${Math.ceil(left / 60000)} daqiqadan keyin qayta urinib ko'ring`);
     }
     const body = await readBody(req);
     const pass = typeof body.password === 'string' ? body.password : '';
     if (!crypto.timingSafeEqual(sha256(pass), sha256(ADMIN_PASSWORD))) {
-      // Blok muddati o'tgan bo'lsa hisob noldan boshlanadi
-      const count = (rec && rec.until === 0 ? rec.count : 0) + 1;
-      loginFails.set(ip, { count, until: count >= MAX_FAILS ? now + BLOCK_MS : 0 });
-      if (count >= MAX_FAILS) console.warn(`[xavfsizlik] ${ip} ${MAX_FAILS} marta noto'g'ri parol kiritdi — 15 daqiqaga bloklandi`);
+      const count = await recordFail(ip);
+      if (count >= MAX_FAILS) console.warn(`[xavfsizlik] ${ip} ${count} marta noto'g'ri parol kiritdi — 15 daqiqaga bloklandi`);
       throw new HttpError(401, "Parol noto'g'ri");
     }
-    loginFails.delete(ip);
-    for (const [t, exp] of tokens) if (exp < now) tokens.delete(t); // eskirganlarni tozalash
+    await clearFails(ip);
     const token = crypto.randomBytes(32).toString('hex');
-    tokens.set(token, now + TOKEN_TTL);
+    await createSession(token);
     return sendJson(res, 200, { token });
   }
 
   // --- logout (tokenni bekor qilish)
   if (resource === 'logout' && !id) {
     if (method !== 'POST') throw new HttpError(405, 'Metod ruxsat etilmagan');
-    const m = /^Bearer\s+(.+)$/i.exec(req.headers['authorization'] || '');
-    if (m) tokens.delete(m[1].trim());
+    const token = bearer(req);
+    if (token) await deleteSession(token);
     return sendJson(res, 200, { ok: true });
   }
 
   // --- courses
   if (resource === 'courses') {
-    if (!id && method === 'GET') return sendJson(res, 200, load('courses'));
+    if (!id && method === 'GET') return sendJson(res, 200, await load('courses'));
     if (!id && method === 'POST') {
-      requireAuth(req);
+      await requireAuth(req);
       const body = await readBody(req);
-      const course = { id: newId('c'), ...validateCourse(body) };
-      const courses = load('courses');
+      const course = { id: newId('c'), ...(await validateCourse(body)) };
+      const courses = await load('courses');
       courses.push(course);
-      save('courses', courses);
+      await save('courses', courses);
       return sendJson(res, 201, course);
     }
     if (id && method === 'PUT') {
-      requireAuth(req);
+      await requireAuth(req);
       const body = await readBody(req);
-      const courses = load('courses');
+      const courses = await load('courses');
       const idx = courses.findIndex((c) => c.id === id);
       if (idx === -1) throw new HttpError(404, 'Kurs topilmadi');
-      courses[idx] = { id, ...validateCourse(body, courses[idx]) };
-      save('courses', courses);
+      courses[idx] = { id, ...(await validateCourse(body, courses[idx])) };
+      await save('courses', courses);
       return sendJson(res, 200, courses[idx]);
     }
     if (id && method === 'DELETE') {
-      requireAuth(req);
-      const courses = load('courses');
+      await requireAuth(req);
+      const courses = await load('courses');
       if (!courses.some((c) => c.id === id)) throw new HttpError(404, 'Kurs topilmadi');
-      const groups = load('groups');
+      const groups = await load('groups');
       const removedGroupIds = new Set(groups.filter((g) => g.courseId === id).map((g) => g.id));
-      const apps = load('applications');
+      const apps = await load('applications');
       let appsChanged = false;
       for (const a of apps) {
         if (a.groupId && removedGroupIds.has(a.groupId)) { a.groupId = null; a.status = 'new'; appsChanged = true; }
       }
-      if (appsChanged) save('applications', apps);
-      if (removedGroupIds.size) save('groups', groups.filter((g) => !removedGroupIds.has(g.id)));
-      save('courses', courses.filter((c) => c.id !== id));
+      if (appsChanged) await save('applications', apps);
+      if (removedGroupIds.size) await save('groups', groups.filter((g) => !removedGroupIds.has(g.id)));
+      await save('courses', courses.filter((c) => c.id !== id));
       return sendJson(res, 200, { ok: true });
     }
     throw new HttpError(id ? 405 : 405, 'Metod ruxsat etilmagan');
@@ -342,9 +447,9 @@ async function handleApi(req, res, pathname) {
 
   // --- teachers
   if (resource === 'teachers') {
-    if (!id && method === 'GET') return sendJson(res, 200, load('teachers'));
+    if (!id && method === 'GET') return sendJson(res, 200, await load('teachers'));
     if (!id && method === 'POST') {
-      requireAuth(req);
+      await requireAuth(req);
       const body = await readBody(req);
       const t = {
         id: newId('t'),
@@ -357,22 +462,22 @@ async function handleApi(req, res, pathname) {
       if (t.name.length < 2) throw new HttpError(400, 'Ism kamida 2 belgi bo\'lishi kerak');
       if (!t.subject) throw new HttpError(400, 'Fan kiritilishi shart');
       if (!Number.isFinite(t.experience) || t.experience < 0) throw new HttpError(400, 'Tajriba (yil) musbat son bo\'lishi kerak');
-      const teachers = load('teachers');
+      const teachers = await load('teachers');
       teachers.push(t);
-      save('teachers', teachers);
+      await save('teachers', teachers);
       return sendJson(res, 201, t);
     }
     if (id && method === 'DELETE') {
-      requireAuth(req);
-      const teachers = load('teachers');
+      await requireAuth(req);
+      const teachers = await load('teachers');
       if (!teachers.some((t) => t.id === id)) throw new HttpError(404, 'Ustoz topilmadi');
       for (const name of ['courses', 'groups']) {
-        const list = load(name);
+        const list = await load(name);
         let changed = false;
         for (const item of list) if (item.teacherId === id) { item.teacherId = null; changed = true; }
-        if (changed) save(name, list);
+        if (changed) await save(name, list);
       }
-      save('teachers', teachers.filter((t) => t.id !== id));
+      await save('teachers', teachers.filter((t) => t.id !== id));
       return sendJson(res, 200, { ok: true });
     }
     throw new HttpError(405, 'Metod ruxsat etilmagan');
@@ -380,8 +485,8 @@ async function handleApi(req, res, pathname) {
 
   // --- groups
   if (resource === 'groups') {
-    requireAuth(req);
-    if (!id && method === 'GET') return sendJson(res, 200, load('groups'));
+    await requireAuth(req);
+    if (!id && method === 'GET') return sendJson(res, 200, await load('groups'));
     if (!id && method === 'POST') {
       const body = await readBody(req);
       const g = {
@@ -393,23 +498,23 @@ async function handleApi(req, res, pathname) {
         capacity: toNumber(body.capacity)
       };
       if (!g.name) throw new HttpError(400, 'Guruh nomi kiritilishi shart');
-      if (!load('courses').some((c) => c.id === g.courseId)) throw new HttpError(400, 'Bunday kurs mavjud emas');
-      if (!load('teachers').some((t) => t.id === g.teacherId)) throw new HttpError(400, 'Bunday ustoz mavjud emas');
+      if (!(await load('courses')).some((c) => c.id === g.courseId)) throw new HttpError(400, 'Bunday kurs mavjud emas');
+      if (!(await load('teachers')).some((t) => t.id === g.teacherId)) throw new HttpError(400, 'Bunday ustoz mavjud emas');
       if (!g.schedule) throw new HttpError(400, 'Dars jadvali kiritilishi shart');
       if (!Number.isInteger(g.capacity) || g.capacity < 1) throw new HttpError(400, 'Sig\'im musbat butun son bo\'lishi kerak');
-      const groups = load('groups');
+      const groups = await load('groups');
       groups.push(g);
-      save('groups', groups);
+      await save('groups', groups);
       return sendJson(res, 201, g);
     }
     if (id && method === 'DELETE') {
-      const groups = load('groups');
+      const groups = await load('groups');
       if (!groups.some((g) => g.id === id)) throw new HttpError(404, 'Guruh topilmadi');
-      const apps = load('applications');
+      const apps = await load('applications');
       let changed = false;
       for (const a of apps) if (a.groupId === id) { a.groupId = null; a.status = 'new'; changed = true; }
-      if (changed) save('applications', apps);
-      save('groups', groups.filter((g) => g.id !== id));
+      if (changed) await save('applications', apps);
+      await save('groups', groups.filter((g) => g.id !== id));
       return sendJson(res, 200, { ok: true });
     }
     throw new HttpError(405, 'Metod ruxsat etilmagan');
@@ -425,25 +530,25 @@ async function handleApi(req, res, pathname) {
       const message = str(body.message);
       if (name.length < 2) throw new HttpError(400, 'Ism kamida 2 belgi bo\'lishi kerak');
       if (phone.replace(/\D/g, '').length < 9) throw new HttpError(400, 'Telefon raqam kamida 9 ta raqamdan iborat bo\'lishi kerak');
-      if (!load('courses').some((c) => c.id === courseId)) throw new HttpError(400, 'Kurs tanlanmagan yoki mavjud emas');
+      if (!(await load('courses')).some((c) => c.id === courseId)) throw new HttpError(400, 'Kurs tanlanmagan yoki mavjud emas');
       if (name.length > 100 || phone.length > 30 || message.length > 2000) throw new HttpError(400, 'Maydonlar juda uzun');
-      const apps = load('applications');
+      const apps = await load('applications');
       const app = { id: newAppId(apps), name, phone, courseId, message, status: 'new', groupId: null, seen: false, adminNote: '', noteUpdatedAt: null, createdAt: new Date().toISOString() };
       apps.push(app);
-      save('applications', apps);
+      await save('applications', apps);
       return sendJson(res, 201, app);
     }
-    requireAuth(req);
+    await requireAuth(req);
     if (!id && method === 'GET') {
-      const apps = load('applications').slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+      const apps = (await load('applications')).slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
       return sendJson(res, 200, apps);
     }
     // POST /api/applications/seen — barcha arizalarni "ko'rilgan" deb belgilaydi
     if (id === 'seen' && method === 'POST') {
-      const apps = load('applications');
+      const apps = await load('applications');
       let changed = 0;
       for (const a of apps) if (a.seen !== true) { a.seen = true; changed++; }
-      if (changed) save('applications', apps);
+      if (changed) await save('applications', apps);
       return sendJson(res, 200, { ok: true, changed });
     }
     if (id && method === 'PATCH') {
@@ -457,7 +562,7 @@ async function handleApi(req, res, pathname) {
       }
       if (hasNote && typeof body.adminNote !== 'string') throw new HttpError(400, "adminNote matn bo'lishi kerak");
       if (hasNote && body.adminNote.length > 2000) throw new HttpError(400, 'Izoh juda uzun (2000 belgigacha)');
-      const apps = load('applications');
+      const apps = await load('applications');
       const app = apps.find((a) => a.id === id);
       if (!app) throw new HttpError(404, 'Ariza topilmadi');
       if (hasNote) {
@@ -471,7 +576,7 @@ async function handleApi(req, res, pathname) {
           app.status = body.status;
           if (body.status === 'new') app.groupId = null;
         }
-        save('applications', apps);
+        await save('applications', apps);
         return sendJson(res, 200, app);
       }
       const groupId = body.groupId === null || body.groupId === '' ? null : str(body.groupId);
@@ -482,7 +587,7 @@ async function handleApi(req, res, pathname) {
         app.groupId = null;
         app.status = 'new';
       } else {
-        const group = load('groups').find((g) => g.id === groupId);
+        const group = (await load('groups')).find((g) => g.id === groupId);
         if (!group) throw new HttpError(400, 'Bunday guruh mavjud emas');
         if (app.groupId !== groupId) {
           const count = apps.filter((a) => a.groupId === groupId && a.id !== app.id).length;
@@ -491,13 +596,13 @@ async function handleApi(req, res, pathname) {
         app.groupId = groupId;
         app.status = 'assigned';
       }
-      save('applications', apps);
+      await save('applications', apps);
       return sendJson(res, 200, app);
     }
     if (id && method === 'DELETE') {
-      const apps = load('applications');
+      const apps = await load('applications');
       if (!apps.some((a) => a.id === id)) throw new HttpError(404, 'Ariza topilmadi');
-      save('applications', apps.filter((a) => a.id !== id));
+      await save('applications', apps.filter((a) => a.id !== id));
       return sendJson(res, 200, { ok: true });
     }
     throw new HttpError(405, 'Metod ruxsat etilmagan');
@@ -556,10 +661,14 @@ function serveStatic(req, res, pathname) {
 }
 
 // ---------------------------------------------------------------- Server
-const server = http.createServer(async (req, res) => {
+async function handler(req, res) {
   let pathname;
   try {
-    pathname = new URL(req.url, 'http://localhost').pathname;
+    const u = new URL(req.url, 'http://localhost');
+    pathname = u.pathname;
+    // Vercel: vercel.json dagi rewrite asl yo'lni ?__p= orqali uzatadi
+    const p = u.searchParams.get('__p');
+    if (IS_VERCEL && p !== null && pathname.startsWith('/api')) pathname = '/api/' + p.replace(/^\/+/, '');
   } catch (_) {
     return sendJson(res, 400, { error: "Noto'g'ri URL" });
   }
@@ -575,10 +684,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   serveStatic(req, res, pathname);
-});
+}
 
-initData();
-migrateApplicationIds();
-server.listen(PORT, () => {
-  console.log(`O'quv markaz serveri ishga tushdi: http://localhost:${PORT}`);
-});
+module.exports = { handler };
+
+// Lokal ishga tushirish: node server.js (Vercel'da esa api/index.js handler'ni ishlatadi)
+if (require.main === module) {
+  (async () => {
+    if (!USE_KV) initData();
+    await migrateApplicationIds();
+    http.createServer(handler).listen(PORT, () => {
+      console.log(`O'quv markaz serveri ishga tushdi: http://localhost:${PORT}` + (USE_KV ? ' (Redis)' : ' (lokal fayllar)'));
+    });
+  })().catch((e) => { console.error(e); process.exit(1); });
+}
