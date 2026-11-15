@@ -63,5 +63,5 @@ POST /api/applications validatsiyasi: name (≥2 belgi), phone (≥9 raqam), cou
 
 PATCH guruhga biriktirishda guruh to'lgan bo'lsa (capacity) → 400 `{ error: "Guruh to'lgan" }`.
 
-Admin paroli: `.env` dagi `ADMIN_PASSWORD` (yoki muhit o'zgaruvchisi); bo'lmasa server tasodifiy parol yaratib `.env` ga yozadi. Token 12 soat amal qiladi, `POST /api/logout` bekor qiladi. Bir IP dan 5 ta noto'g'ri urinish → 15 daqiqa blok (429).
+Admin paroli doimiy: server.js dagi `ADMIN_PASSWORD_HASH` (scrypt) bilan tekshiriladi, .env/muhit o'zgaruvchisiga bog'liq emas. Token 12 soat amal qiladi, `POST /api/logout` bekor qiladi. Bir IP dan 5 ta noto'g'ri urinish → 15 daqiqa blok (429).
 Frontend admin tokenni `localStorage["adminToken"]` da saqlaydi.

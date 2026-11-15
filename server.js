@@ -38,23 +38,21 @@ function loadEnvFile() {
   }
 }
 
-// Admin paroli: koddagi standart parol YO'Q. Berilmagan bo'lsa, kuchli tasodifiy parol yaratilib
-// .env ga yoziladi (.env gitignore'da — GitHub'ga chiqmaydi) va konsolga bir marta chiqariladi.
-function resolveAdminPassword() {
-  loadEnvFile();
-  if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
-  // Vercel'da fayl yozib bo'lmaydi: parol Vercel muhit o'zgaruvchisi (ADMIN_PASSWORD) orqali beriladi
-  if (IS_VERCEL) return '';
-  const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let pw = '';
-  for (let i = 0; i < 16; i++) pw += ALPHA[crypto.randomInt(ALPHA.length)];
-  fs.appendFileSync(ENV_FILE, `ADMIN_PASSWORD=${pw}\n`, { mode: 0o600 });
-  console.log(`\n  Yangi admin parol yaratildi va .env fayliga yozildi: ${pw}\n`);
-  return pw;
+// Admin paroli DOIMIY: kodda parolning o'zi emas, faqat uning scrypt xeshi saqlanadi.
+// Xeshdan parolni tiklab bo'lmaydi, shuning uchun ochiq repozitoriyda turishi xavfsiz.
+// Parol lokal, Vercel va har qanday boshqa joyda bir xil; .env yoki muhit o'zgaruvchisiga bog'liq emas.
+// Parolni almashtirish kerak bo'lsa: node -e "..." bilan yangi xesh hisoblab, shu qatorni almashtiring.
+const ADMIN_PASSWORD_HASH = 'scrypt$4828e95316ff1e6c20bb34fc36c26831$9ab0958f18d2ccd58f868b05e4612ce66d92ed02421db135d81e1ae718af8e23';
+
+function verifyAdminPassword(pass) {
+  const [, saltHex, hashHex] = ADMIN_PASSWORD_HASH.split('$');
+  const expected = Buffer.from(hashHex, 'hex');
+  const actual = crypto.scryptSync(String(pass), Buffer.from(saltHex, 'hex'), expected.length, { N: 16384, r: 8, p: 1 });
+  return crypto.timingSafeEqual(actual, expected);
 }
 
+loadEnvFile(); // PORT va Redis sozlamalari uchun (parol uchun emas)
 const PORT = Number(process.env.PORT) || 3000;
-const ADMIN_PASSWORD = resolveAdminPassword();
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const MAX_BODY = 1024 * 1024; // ~1MB
@@ -328,7 +326,6 @@ async function requireAuth(req) {
   if (!(await hasSession(bearer(req)))) throw new HttpError(401, 'Avtorizatsiya talab qilinadi');
 }
 
-const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest();
 
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 const LEVELS = ["Boshlang'ich", "O'rta", 'Yuqori'];
@@ -377,7 +374,6 @@ async function handleApi(req, res, pathname) {
   // --- login
   if (resource === 'login' && !id) {
     if (method !== 'POST') throw new HttpError(405, 'Metod ruxsat etilmagan');
-    if (!ADMIN_PASSWORD) throw new HttpError(503, 'Admin paroli sozlanmagan (ADMIN_PASSWORD)');
     const ip = clientIp(req);
     const left = await blockedFor(ip);
     if (left > 0) {
@@ -385,7 +381,7 @@ async function handleApi(req, res, pathname) {
     }
     const body = await readBody(req);
     const pass = typeof body.password === 'string' ? body.password : '';
-    if (!crypto.timingSafeEqual(sha256(pass), sha256(ADMIN_PASSWORD))) {
+    if (pass.length > 200 || !verifyAdminPassword(pass)) {
       const count = await recordFail(ip);
       if (count >= MAX_FAILS) console.warn(`[xavfsizlik] ${ip} ${count} marta noto'g'ri parol kiritdi — 15 daqiqaga bloklandi`);
       throw new HttpError(401, "Parol noto'g'ri");
