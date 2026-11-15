@@ -69,6 +69,13 @@
             <div class="panel-head"><h3>Guruhlar to'lganlik darajasi</h3></div>
             <div id="groupFill" class="fill-list"></div>
           </div>
+          <div class="panel tg-panel" id="tgPanel">
+            <div class="panel-head">
+              <h3>Telegram bildirishnomalari</h3>
+              <button type="button" class="btn btn-ghost btn-sm" id="tgTestBtn" disabled>Sinov xabarini yuborish</button>
+            </div>
+            <div class="tg-status" id="tgStatus" aria-live="polite"><span class="spinner"></span> Tekshirilmoqda...</div>
+          </div>
           <div class="panel">
             <div class="panel-head">
               <h3>So'nggi arizalar</h3>
@@ -80,7 +87,7 @@
 
         <!-- APPLICATIONS -->
         <section class="view" id="view-applications" hidden>
-          <div class="toolbar">
+          <div class="toolbar toolbar-apps">
             <input type="search" id="appSearch" class="input" placeholder="ID, ism yoki telefon bo'yicha qidirish...">
             <select id="appStatus" class="input">
               <option value="all">Barcha statuslar</option>
@@ -88,6 +95,7 @@
               <option value="assigned">Biriktirilgan</option>
             </select>
             <select id="appCourse" class="input"></select>
+            <button type="button" class="btn btn-ghost export-btn" id="exportBtn" title="Joriy filtrdagi arizalarni Excel faylga yuklab olish"><span aria-hidden="true">📥</span> Excel</button>
           </div>
           <div class="panel no-pad">
             <div class="table-wrap">

@@ -13,6 +13,10 @@
  *
  * JSON fayllarga yozish atomik: avval vaqtinchalik faylga yoziladi, so'ng rename qilinadi.
  * Fayl mavjud bo'lmasa (yoki buzilgan bo'lsa) seed ma'lumot bilan yaratiladi.
+ *
+ * Arizalar faqat listApps/getApp/putApp(s)/insertApp/deleteApp orqali o'qiladi/yoziladi
+ * (Redis rejimida hash `oquv:apps`, lokalda data/applications.json massiv). Spam himoyasi va
+ * Telegram bildirishnomasi — "Ariza spam himoyasi" va "Telegram" bo'limlarida.
  */
 'use strict';
 
@@ -242,14 +246,262 @@ function newAppId(apps) {
   return id;
 }
 
+const randomAppId = () => String(crypto.randomInt(100000, 1000000));
+const isAppId = (id) => /^\d{6}$/.test(String(id));
+
+// ---------------------------------------------------------------- Arizalar ombori
+// Lokal rejim: data/applications.json (massiv, format o'zgarmagan). Node bitta jarayon va fayl
+//   sinxron o'qiladi/yoziladi, shuning uchun "o'qi -> o'zgartir -> yoz" orasida boshqa so'rov aralasha olmaydi.
+// Redis rejimi: har bir ariza alohida — hash `oquv:apps` (maydon = ariza id, qiymat = JSON).
+//   Shunda bir vaqtda kelgan arizalar bir-birini o'chirib yubormaydi (butun massivni qayta yozish yo'q).
+//   Eski `oquv:applications` (butun massiv, string) kaliti bo'lsa — birinchi murojaatda hash'ga ko'chiriladi.
+const APPS_HASH = KV_PREFIX + 'apps';
+const APPS_OLD_KEY = KV_PREFIX + 'applications';
+const APPS_READY_KEY = KV_PREFIX + 'apps:ready'; // ko'chirish/seed tugaganini bildiradi (hammasi o'chirilsa ham qayta seed qilinmasin)
+let appsReady = null; // jarayon ichida bir marta tekshirish uchun
+
+function ensureAppsStore() {
+  if (!USE_KV) return Promise.resolve();
+  if (!appsReady) appsReady = prepareAppsHash().catch((e) => { appsReady = null; throw e; });
+  return appsReady;
+}
+
+async function prepareAppsHash() {
+  if ((await kv('GET', APPS_READY_KEY)) != null) return;
+  const raw = await kv('GET', APPS_OLD_KEY);
+  if (raw != null) {
+    let list = null;
+    try { const p = JSON.parse(raw); if (Array.isArray(p)) list = p; } catch (_) { /* pastda */ }
+    if (!list) {
+      // Buzilgan eski kalit o'chirilmaydi (qo'lda tiklash uchun qoladi)
+      console.error('[arizalar] eski oquv:applications kaliti JSON massiv emas — ko\'chirilmadi');
+    } else {
+      const used = new Set();
+      const items = [];
+      for (const a of list) {
+        if (!a || typeof a !== 'object') continue;
+        let id = String(a.id);
+        if (!isAppId(id) || used.has(id)) { do { id = randomAppId(); } while (used.has(id)); }
+        used.add(id);
+        items.push({ ...a, id });
+      }
+      // HSETNX: ko'chirish paytida boshqa instansiya yozgan yangiroq yozuv ustiga yozilmaydi
+      await Promise.all(items.map((a) => kv('HSETNX', APPS_HASH, a.id, JSON.stringify(a))));
+      await kv('SET', APPS_READY_KEY, '1');
+      await kv('DEL', APPS_OLD_KEY);
+      console.log(`[arizalar] ${items.length} ta ariza oquv:applications -> oquv:apps hash'iga ko'chirildi`);
+      return;
+    }
+  } else if ((await kv('GET', APPS_READY_KEY)) == null && Number(await kv('EXISTS', APPS_HASH)) === 0) {
+    // Hech narsa yo'q: seed bilan to'ldiramiz (HSETNX — parallel instansiyalar bir-birini buzmaydi)
+    await Promise.all(SEED.applications.map((a) => kv('HSETNX', APPS_HASH, a.id, JSON.stringify(a))));
+  }
+  await kv('SET', APPS_READY_KEY, '1');
+}
+
+function parseApp(raw) {
+  try { const a = JSON.parse(raw); return a && typeof a === 'object' && !Array.isArray(a) ? a : null; } catch (_) { return null; }
+}
+
+async function listApps() {
+  if (!USE_KV) return load('applications');
+  await ensureAppsStore();
+  const r = await kv('HGETALL', APPS_HASH);
+  const values = Array.isArray(r) ? r.filter((_, i) => i % 2 === 1) : (r && typeof r === 'object' ? Object.values(r) : []);
+  return values.map(parseApp).filter(Boolean);
+}
+
+async function getApp(id) {
+  if (!USE_KV) return (await load('applications')).find((a) => a.id === id) || null;
+  await ensureAppsStore();
+  const raw = await kv('HGET', APPS_HASH, String(id));
+  return raw == null ? null : parseApp(raw);
+}
+
+// Bir nechta (mavjud) arizani yangilaydi
+async function putApps(list) {
+  if (!list.length) return;
+  if (!USE_KV) {
+    const byId = new Map(list.map((a) => [a.id, a]));
+    const apps = (await load('applications')).map((a) => byId.get(a.id) || a);
+    for (const a of list) if (!apps.some((x) => x.id === a.id)) apps.push(a);
+    return save('applications', apps);
+  }
+  await ensureAppsStore();
+  const args = [];
+  for (const a of list) args.push(a.id, JSON.stringify(a));
+  await kv('HSET', APPS_HASH, ...args);
+}
+const putApp = (app) => putApps([app]);
+
+// Yangi ariza: takrorlanmaydigan 6 xonali ID beradi va saqlaydi
+async function insertApp(fields) {
+  if (!USE_KV) {
+    const apps = await load('applications');
+    const app = { id: newAppId(apps), ...fields };
+    apps.push(app);
+    await save('applications', apps);
+    return app;
+  }
+  await ensureAppsStore();
+  for (let i = 0; i < 10; i++) {
+    const app = { id: randomAppId(), ...fields };
+    if (Number(await kv('HSETNX', APPS_HASH, app.id, JSON.stringify(app))) === 1) return app;
+  }
+  throw new Error('Ariza ID ajratib bo\'lmadi');
+}
+
+// true — o'chirildi, false — topilmadi
+async function deleteApp(id) {
+  if (!USE_KV) {
+    const apps = await load('applications');
+    if (!apps.some((a) => a.id === id)) return false;
+    await save('applications', apps.filter((a) => a.id !== id));
+    return true;
+  }
+  await ensureAppsStore();
+  return Number(await kv('HDEL', APPS_HASH, String(id))) > 0;
+}
+
 // Eski formatdagi (masalan "a1") ariza ID larini 6 xonali raqamga o'tkazadi — server ishga tushganda bir marta
 async function migrateApplicationIds() {
-  const apps = await load('applications');
-  let changed = false;
-  for (const a of apps) {
-    if (!/^\d{6}$/.test(String(a.id))) { a.id = newAppId(apps); changed = true; }
+  if (!USE_KV) {
+    const apps = await load('applications');
+    let changed = false;
+    for (const a of apps) {
+      if (!isAppId(a.id)) { a.id = newAppId(apps); changed = true; }
+    }
+    if (changed) await save('applications', apps);
+    return;
   }
-  if (changed) await save('applications', apps);
+  for (const a of await listApps()) {
+    if (isAppId(a.id)) continue;
+    const oldId = a.id;
+    const { id: _old, ...fields } = a;
+    await insertApp(fields);
+    await kv('HDEL', APPS_HASH, String(oldId));
+  }
+}
+
+// ---------------------------------------------------------------- Ariza spam himoyasi
+// IP cheklovi: 10 daqiqada 3 tadan ortiq ariza -> 429. Sanoq faqat HAQIQIY SAQLANGAN arizalar bo'yicha:
+// saqlashdan oldin atomik "o'rin band qilinadi" (INCR), keyin 429/409 yoki saqlash xatosi bo'lsa o'rin qaytariladi (DECR).
+// Shunda xato to'ldirilgan forma, takroriy ariza yoki bot-tuzoq foydalanuvchini bloklamaydi, lekin
+// parallel so'rovlarda ham limitdan oshib ketib bo'lmaydi. Oyna — birinchi arizadan boshlab 10 daqiqa (fixed window).
+const APP_LIMIT = 3;
+const APP_WINDOW_MS = 10 * 60 * 1000;
+const DUP_WINDOW_MS = 24 * 60 * 60 * 1000;
+const appRate = new Map(); // faqat lokal rejimda: ip -> { count, expires }
+
+async function reserveAppSlot(ip) {
+  if (USE_KV) {
+    const key = KV_PREFIX + 'arate:' + ip;
+    const count = Number(await kv('INCR', key));
+    if (count === 1) await kv('PEXPIRE', key, APP_WINDOW_MS);
+    if (count <= APP_LIMIT) return true;
+    await kv('DECR', key);
+    if (Number(await kv('PTTL', key)) < 0) await kv('PEXPIRE', key, APP_WINDOW_MS); // muddatsiz qolib ketmasin
+    return false;
+  }
+  const now = Date.now();
+  for (const [k, r] of appRate) if (r.expires < now) appRate.delete(k);
+  const rec = appRate.get(ip) || { count: 0, expires: now + APP_WINDOW_MS };
+  if (rec.count >= APP_LIMIT) return false;
+  rec.count++;
+  appRate.set(ip, rec);
+  return true;
+}
+async function releaseAppSlot(ip) {
+  if (USE_KV) return kv('DECR', KV_PREFIX + 'arate:' + ip);
+  const rec = appRate.get(ip);
+  if (rec && rec.count > 0) rec.count--;
+}
+
+// Telefon: faqat raqamlar, oxirgi 9 tasi (+998 bilan va +998 siz yozilgani bir xil hisoblanadi)
+const phoneKey = (phone) => String(phone || '').replace(/\D/g, '').slice(-9);
+
+// Takroriy ariza (shu telefon + shu kurs, oxirgi 24 soat). true — takror.
+// Saqlangan arizalar ko'rib chiqiladi; Redis rejimida qo'shimcha SET NX kaliti bir vaqtda
+// yuborilgan ikki bir xil arizani (masalan, ikki marta bosish) ham ushlaydi.
+async function claimDuplicate(phone, courseId) {
+  const p9 = phoneKey(phone);
+  const now = Date.now();
+  const apps = await listApps();
+  const dup = apps.some((a) => a.courseId === courseId && phoneKey(a.phone) === p9 &&
+    now - Date.parse(a.createdAt) < DUP_WINDOW_MS);
+  if (dup) return true;
+  if (USE_KV) {
+    const ok = await kv('SET', KV_PREFIX + 'dup:' + p9 + ':' + courseId, '1', 'NX', 'PX', DUP_WINDOW_MS);
+    return ok == null;
+  }
+  return false;
+}
+async function releaseDuplicate(phone, courseId) {
+  if (USE_KV) await kv('DEL', KV_PREFIX + 'dup:' + phoneKey(phone) + ':' + courseId);
+}
+
+// Bot belgilari: honeypot `website` to'ldirilgan yoki forma 3 soniyadan tez yuborilgan
+function looksLikeBot(body) {
+  if (body.website != null && String(body.website).trim() !== '') return true;
+  if (body.formTime !== undefined && body.formTime !== null && body.formTime !== '') {
+    const t = toNumber(body.formTime);
+    if (!Number.isFinite(t) || t < 3000) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------- Telegram
+// TELEGRAM_BOT_TOKEN va TELEGRAM_CHAT_ID muhitdan (lokalda .env dan ham) har safar o'qiladi.
+// Token hech qachon javobga yoki logga chiqmaydi.
+function telegramConfig() {
+  const token = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  const chatId = String(process.env.TELEGRAM_CHAT_ID || '').trim();
+  return token && chatId ? { token, chatId } : null;
+}
+
+const escHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// Xatolarni qaytaradi (throw qilmaydi): { ok: true } yoki { ok: false, error }
+async function sendTelegram(text) {
+  const cfg = telegramConfig();
+  if (!cfg) return { ok: false, error: 'Telegram sozlanmagan (TELEGRAM_BOT_TOKEN va TELEGRAM_CHAT_ID kerak)' };
+  const hide = (s) => String(s).split(cfg.token).join('***');
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: cfg.chatId, text, parse_mode: 'HTML', disable_web_page_preview: true }),
+      signal: AbortSignal.timeout(4000)
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) return { ok: false, error: 'Telegram xatosi: ' + hide(j.description || ('HTTP ' + r.status)) };
+    return { ok: true };
+  } catch (e) {
+    const reason = e && (e.name === 'TimeoutError' || e.name === 'AbortError') ? 'javob kutish vaqti tugadi' : (e && e.message) || 'tarmoq xatosi';
+    return { ok: false, error: 'Telegram xatosi: ' + hide(reason) };
+  }
+}
+
+// Toshkent vaqti (UTC+5, yozgi vaqt yo'q): "15.11.2026 18:30"
+function tashkentTime(iso) {
+  const d = new Date(Date.parse(iso) + 5 * 60 * 60 * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+
+async function notifyNewApp(app, course) {
+  if (!telegramConfig()) return;
+  const lines = [
+    `🆕 <b>Yangi ariza #${escHtml(app.id)}</b>`,
+    '',
+    `👤 <b>Ism:</b> ${escHtml(app.name)}`,
+    `📞 <b>Telefon:</b> ${escHtml(app.phone)}`,
+    `📚 <b>Kurs:</b> ${escHtml(course ? `${course.icon || ''} ${course.title}`.trim() : app.courseId)}`
+  ];
+  if (app.message) lines.push(`💬 <b>Izoh:</b> ${escHtml(app.message)}`);
+  lines.push(`🕒 <b>Sana:</b> ${tashkentTime(app.createdAt)} (Toshkent)`);
+  const r = await sendTelegram(lines.join('\n'));
+  if (!r.ok) console.error(`[telegram] #${app.id} arizasi haqida xabar yuborilmadi: ${r.error}`);
 }
 
 function newId(prefix) {
@@ -428,12 +680,11 @@ async function handleApi(req, res, pathname) {
       if (!courses.some((c) => c.id === id)) throw new HttpError(404, 'Kurs topilmadi');
       const groups = await load('groups');
       const removedGroupIds = new Set(groups.filter((g) => g.courseId === id).map((g) => g.id));
-      const apps = await load('applications');
-      let appsChanged = false;
-      for (const a of apps) {
-        if (a.groupId && removedGroupIds.has(a.groupId)) { a.groupId = null; a.status = 'new'; appsChanged = true; }
+      if (removedGroupIds.size) {
+        const changedApps = (await listApps()).filter((a) => a.groupId && removedGroupIds.has(a.groupId));
+        for (const a of changedApps) { a.groupId = null; a.status = 'new'; }
+        await putApps(changedApps);
       }
-      if (appsChanged) await save('applications', apps);
       if (removedGroupIds.size) await save('groups', groups.filter((g) => !removedGroupIds.has(g.id)));
       await save('courses', courses.filter((c) => c.id !== id));
       return sendJson(res, 200, { ok: true });
@@ -506,10 +757,9 @@ async function handleApi(req, res, pathname) {
     if (id && method === 'DELETE') {
       const groups = await load('groups');
       if (!groups.some((g) => g.id === id)) throw new HttpError(404, 'Guruh topilmadi');
-      const apps = await load('applications');
-      let changed = false;
-      for (const a of apps) if (a.groupId === id) { a.groupId = null; a.status = 'new'; changed = true; }
-      if (changed) await save('applications', apps);
+      const changedApps = (await listApps()).filter((a) => a.groupId === id);
+      for (const a of changedApps) { a.groupId = null; a.status = 'new'; }
+      await putApps(changedApps);
       await save('groups', groups.filter((g) => g.id !== id));
       return sendJson(res, 200, { ok: true });
     }
@@ -528,24 +778,49 @@ async function handleApi(req, res, pathname) {
       if (phone.replace(/\D/g, '').length < 9) throw new HttpError(400, 'Telefon raqam kamida 9 ta raqamdan iborat bo\'lishi kerak');
       if (!(await load('courses')).some((c) => c.id === courseId)) throw new HttpError(400, 'Kurs tanlanmagan yoki mavjud emas');
       if (name.length > 100 || phone.length > 30 || message.length > 2000) throw new HttpError(400, 'Maydonlar juda uzun');
-      const apps = await load('applications');
-      const app = { id: newAppId(apps), name, phone, courseId, message, status: 'new', groupId: null, seen: false, adminNote: '', noteUpdatedAt: null, createdAt: new Date().toISOString() };
-      apps.push(app);
-      await save('applications', apps);
+      const fields = { name, phone, courseId, message, status: 'new', groupId: null, seen: false, adminNote: '', noteUpdatedAt: null, createdAt: new Date().toISOString() };
+      // Bot: botni aldash uchun oddiy 201 va soxta ariza (saqlanmaydi, Telegram ham yuborilmaydi)
+      if (looksLikeBot(body)) return sendJson(res, 201, { id: randomAppId(), ...fields });
+      const ip = clientIp(req);
+      if (!(await reserveAppSlot(ip))) {
+        throw new HttpError(429, "Juda ko'p ariza yuborildi. Iltimos, 10 daqiqadan keyin qayta urinib ko'ring");
+      }
+      let app;
+      try {
+        if (await claimDuplicate(phone, courseId)) {
+          await releaseAppSlot(ip);
+          throw new HttpError(409, "Siz bu kursga allaqachon ariza yuborgansiz. Tez orada siz bilan bog'lanamiz");
+        }
+        try {
+          app = await insertApp(fields);
+        } catch (e) {
+          await releaseDuplicate(phone, courseId).catch(() => {});
+          throw e;
+        }
+      } catch (e) {
+        if (!(e instanceof HttpError)) await releaseAppSlot(ip).catch(() => {});
+        throw e;
+      }
+      // Javobdan OLDIN kutamiz (Vercel javobdan keyin funksiyani muzlatadi); xato arizaga ta'sir qilmaydi
+      try {
+        const course = (await load('courses')).find((c) => c.id === courseId);
+        await notifyNewApp(app, course);
+      } catch (e) {
+        console.error('[telegram] bildirishnoma xatosi:', e && e.message);
+      }
       return sendJson(res, 201, app);
     }
     await requireAuth(req);
     if (!id && method === 'GET') {
-      const apps = (await load('applications')).slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+      const apps = (await listApps()).slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
       return sendJson(res, 200, apps);
     }
     // POST /api/applications/seen — barcha arizalarni "ko'rilgan" deb belgilaydi
     if (id === 'seen' && method === 'POST') {
-      const apps = await load('applications');
-      let changed = 0;
-      for (const a of apps) if (a.seen !== true) { a.seen = true; changed++; }
-      if (changed) await save('applications', apps);
-      return sendJson(res, 200, { ok: true, changed });
+      const unseen = (await listApps()).filter((a) => a.seen !== true);
+      for (const a of unseen) a.seen = true;
+      await putApps(unseen);
+      return sendJson(res, 200, { ok: true, changed: unseen.length });
     }
     if (id && method === 'PATCH') {
       const body = await readBody(req);
@@ -558,8 +833,7 @@ async function handleApi(req, res, pathname) {
       }
       if (hasNote && typeof body.adminNote !== 'string') throw new HttpError(400, "adminNote matn bo'lishi kerak");
       if (hasNote && body.adminNote.length > 2000) throw new HttpError(400, 'Izoh juda uzun (2000 belgigacha)');
-      const apps = await load('applications');
-      const app = apps.find((a) => a.id === id);
+      const app = await getApp(id);
       if (!app) throw new HttpError(404, 'Ariza topilmadi');
       if (hasNote) {
         app.adminNote = body.adminNote.trim();
@@ -572,7 +846,7 @@ async function handleApi(req, res, pathname) {
           app.status = body.status;
           if (body.status === 'new') app.groupId = null;
         }
-        await save('applications', apps);
+        await putApp(app);
         return sendJson(res, 200, app);
       }
       const groupId = body.groupId === null || body.groupId === '' ? null : str(body.groupId);
@@ -586,22 +860,33 @@ async function handleApi(req, res, pathname) {
         const group = (await load('groups')).find((g) => g.id === groupId);
         if (!group) throw new HttpError(400, 'Bunday guruh mavjud emas');
         if (app.groupId !== groupId) {
-          const count = apps.filter((a) => a.groupId === groupId && a.id !== app.id).length;
+          const count = (await listApps()).filter((a) => a.groupId === groupId && a.id !== app.id).length;
           if (count >= group.capacity) throw new HttpError(400, "Guruh to'lgan");
         }
         app.groupId = groupId;
         app.status = 'assigned';
       }
-      await save('applications', apps);
+      await putApp(app);
       return sendJson(res, 200, app);
     }
     if (id && method === 'DELETE') {
-      const apps = await load('applications');
-      if (!apps.some((a) => a.id === id)) throw new HttpError(404, 'Ariza topilmadi');
-      await save('applications', apps.filter((a) => a.id !== id));
+      if (!(await deleteApp(id))) throw new HttpError(404, 'Ariza topilmadi');
       return sendJson(res, 200, { ok: true });
     }
     throw new HttpError(405, 'Metod ruxsat etilmagan');
+  }
+
+  // --- Telegram (admin)
+  if (resource === 'telegram') {
+    await requireAuth(req);
+    if (id === 'status' && method === 'GET') return sendJson(res, 200, { configured: !!telegramConfig() });
+    if (id === 'test' && method === 'POST') {
+      const r = await sendTelegram('✅ <b>Test xabari</b>\nO\'quv markaz arizalari haqidagi bildirishnomalar shu chatga keladi.');
+      if (!r.ok) throw new HttpError(400, r.error);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (id === 'status' || id === 'test') throw new HttpError(405, 'Metod ruxsat etilmagan');
+    throw new HttpError(404, 'Endpoint topilmadi');
   }
 
   throw new HttpError(404, 'Endpoint topilmadi');

@@ -65,3 +65,33 @@ PATCH guruhga biriktirishda guruh to'lgan bo'lsa (capacity) → 400 `{ error: "G
 
 Admin paroli doimiy: server.js dagi `ADMIN_PASSWORD_HASH` (scrypt) bilan tekshiriladi, .env/muhit o'zgaruvchisiga bog'liq emas. Token 12 soat amal qiladi, `POST /api/logout` bekor qiladi. Bir IP dan 5 ta noto'g'ri urinish → 15 daqiqa blok (429).
 Frontend admin tokenni `localStorage["adminToken"]` da saqlaydi.
+
+---
+
+## v2 qo'shimchalari (spam himoyasi, saqlash, Telegram, Excel)
+
+### 1. Ariza formasi spamdan himoyasi — `POST /api/applications`
+Body'ga ikkita yangi maydon qo'shiladi (sayt yuboradi):
+- `website` — **bot-tuzoq (honeypot)**. Formada ko'rinmaydigan input (`name="website"`, `tabindex="-1"`, `autocomplete="off"`, ekrandan tashqarida yashirilgan, `display:none` EMAS). Odam uni to'ldirmaydi. To'ldirilgan bo'lsa server arizani **saqlamaydi**, lekin botni aldash uchun oddiy `201` va soxta Application qaytaradi.
+- `formTime` — forma yuklangandan beri o'tgan millisekundlar (son). `< 3000` bo'lsa → bot deb hisoblanadi (xuddi honeypot kabi: 201, saqlanmaydi). Maydon yo'q bo'lsa tekshirilmaydi (eski mijozlar uchun).
+
+Server tomondagi cheklovlar (yangi xato javoblari):
+| Holat | Status | `error` matni |
+|---|---|---|
+| Bir IP dan 10 daqiqada 3 tadan ortiq ariza | 429 | `Juda ko'p ariza yuborildi. Iltimos, 10 daqiqadan keyin qayta urinib ko'ring` |
+| Shu telefon raqami (faqat raqamlar bo'yicha) shu kursga oxirgi 24 soatda ariza yuborgan | 409 | `Siz bu kursga allaqachon ariza yuborgansiz. Tez orada siz bilan bog'lanamiz` |
+
+Aniqliklar: telefon oxirgi 9 ta raqam bo'yicha solishtiriladi (`+998 90 123 45 67` = `901234567`). IP limiti faqat haqiqatan saqlangan arizalarni sanaydi (400/409/429 va bot-tuzoq javoblari sanalmaydi), oyna — birinchi arizadan boshlab 10 daqiqa. Tekshiruv tartibi: validatsiya (400) → bot (soxta 201) → IP limit (429) → takror (409) → saqlash (201).
+
+### 2. Arizalarni saqlash (ichki o'zgarish, API o'zgarmaydi)
+Redis rejimida har bir ariza alohida saqlanadi (hash `oquv:apps`, maydon = ariza id). Eski `oquv:applications` (butun massiv) kaliti bo'lsa, birinchi murojaatda avtomatik ko'chiriladi. Bir vaqtda kelgan arizalar bir-birini o'chirib yubormaydi.
+
+### 3. Telegram bildirishnomasi
+Muhit o'zgaruvchilari: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (lokalda `.env` dan ham o'qiladi). Ikkalasi bo'lsa — har bir yangi (haqiqiy, saqlangan) arizada admin Telegramiga xabar ketadi. Telegram xatosi ariza saqlanishiga ta'sir qilmaydi.
+| Metod | Yo'l | Javob |
+|---|---|---|
+| GET | /api/telegram/status (admin) | `{ configured: boolean }` |
+| POST | /api/telegram/test (admin) | `{ ok: true }` yoki 400 `{ error }` (sozlanmagan / Telegram xatosi matni) |
+
+### 4. Excel eksport
+Faqat admin panel (frontend) — server o'zgarmaydi. Arizalar bo'limida joriy filtrdagi arizalarni `.xlsx` qilib yuklab olish.

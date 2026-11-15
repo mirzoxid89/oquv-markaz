@@ -27,6 +27,32 @@ Birinchi ishga tushganda `data/` papkasi namunaviy ma'lumotlar bilan yaratiladi.
 - Ko'rilmagan arizalar soni sidebar'da ko'rinadi
 - Guruhlar (bandlik nazorati), kurslar va ustozlarni qo'shish/tahrirlash/o'chirish
 
+## Ariza formasi himoyasi
+
+- **Bot-tuzoq:** yashirin `website` maydoni to'ldirilgan yoki forma 3 soniyadan tez yuborilgan (`formTime < 3000`) bo'lsa — ariza saqlanmaydi (bot oddiy javob oladi).
+- **IP limiti:** bir IP dan 10 daqiqada 3 tadan ortiq ariza → 429.
+- **Takror ariza:** shu telefon (oxirgi 9 raqam) shu kursga 24 soat ichida qayta yuborsa → 409.
+- Vercel (Redis) rejimida har bir ariza alohida saqlanadi (hash `oquv:apps`), bir vaqtda kelgan arizalar yo'qolmaydi. Eski `oquv:applications` kaliti avtomatik ko'chiriladi.
+
+## Telegram bildirishnomasi
+
+Har bir yangi ariza admin Telegramiga xabar bo'lib keladi (ID, ism, telefon, kurs, izoh, Toshkent vaqti).
+
+1. Telegramda [@BotFather](https://t.me/BotFather) → `/newbot` → bot nomini kiriting → **token** beriladi (`123456789:AA...`).
+2. Yangi botingizni oching va unga `/start` yozing (guruhga yuborish kerak bo'lsa — botni guruhga qo'shib, guruhda biror xabar yozing).
+3. Brauzerda `https://api.telegram.org/bot<TOKEN>/getUpdates` ni oching va `"chat":{"id": ...}` dagi sonni oling — bu **chat id** (guruhniki manfiy, masalan `-100...`).
+4. Sozlang:
+   - Lokal: `.env` fayliga
+     ```
+     TELEGRAM_BOT_TOKEN=123456789:AA...
+     TELEGRAM_CHAT_ID=987654321
+     ```
+     va serverni qayta ishga tushiring.
+   - Vercel: Project → Settings → Environment Variables ga shu ikkisini qo'shing va qayta deploy qiling.
+5. Admin panelda tekshirish: `GET /api/telegram/status` → `{ configured: true }`, `POST /api/telegram/test` test xabar yuboradi.
+
+Token hech qachon javob yoki logda ko'rsatilmaydi. Telegram ishlamasa ham ariza saqlanaveradi (xato faqat server logiga yoziladi).
+
 ## Tuzilma
 
 ```

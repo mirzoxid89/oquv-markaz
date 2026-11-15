@@ -18,6 +18,7 @@
     applications: [],
     view: 'dashboard',
     loaded: false,
+    telegram: { status: 'loading', configured: false, sending: false }, // status: loading | ok | error
     justSeen: {}, // shu safar birinchi marta ko'rilgan arizalar (qatorni ajratib ko'rsatish uchun)
     filters: { search: '', status: 'all', course: 'all' }
   };
@@ -197,6 +198,7 @@
     }
     var btn = $('refreshBtn');
     btn.disabled = true;
+    loadTelegramStatus(); // mustaqil: asosiy yuklashni bloklamaydi, xatosi uni yiqitmaydi
     return Promise.all([
       api('GET', '/api/courses'),
       api('GET', '/api/teachers'),
@@ -224,7 +226,7 @@
   }
   function resetLoading() {
     var lb = clear($('globalLoading'));
-    append(lb, h('span', { class: 'spinner' }), ' Yuklanmoqda...');
+    append(lb, [h('span', { class: 'spinner' }), ' Yuklanmoqda...']);
   }
 
   // ---------- Navigation ----------
@@ -307,6 +309,8 @@
       });
     }
 
+    renderTelegram();
+
     var recent = clear($('recentApps'));
     var list = apps.slice(0, 5);
     if (!list.length) {
@@ -378,12 +382,12 @@
     sel.value = current;
   }
 
-  function renderApplications() {
-    fillCourseFilter();
+  // Joriy filtr + qidiruvdan o'tgan arizalar (ekrandagi tartibda)
+  function filteredApplications() {
     var f = state.filters;
     var q = f.search.trim().toLowerCase();
     var qDigits = q.replace(/\D/g, '');
-    var list = state.applications.filter(function (a) {
+    return state.applications.filter(function (a) {
       if (f.status !== 'all' && (a.status === 'assigned' ? 'assigned' : 'new') !== f.status) return false;
       if (f.course !== 'all' && a.courseId !== f.course) return false;
       if (q) {
@@ -396,7 +400,11 @@
       }
       return true;
     });
+  }
 
+  function renderApplications() {
+    fillCourseFilter();
+    var list = filteredApplications();
     var tbody = clear($('appTbody'));
     var empty = $('appEmpty');
     var table = tbody.closest('.table-wrap');
@@ -525,6 +533,169 @@
   $('appSearch').addEventListener('input', function (e) { state.filters.search = e.target.value; renderApplications(); });
   $('appStatus').addEventListener('change', function (e) { state.filters.status = e.target.value; renderApplications(); });
   $('appCourse').addEventListener('change', function (e) { state.filters.course = e.target.value; renderApplications(); });
+
+  // ---------- Excel eksport ----------
+  var XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  var xlsxPromise = null;
+  // SheetJS faqat birinchi eksportda dinamik yuklanadi
+  function loadXlsx() {
+    if (window.XLSX && window.XLSX.utils) return Promise.resolve(window.XLSX);
+    if (xlsxPromise) return xlsxPromise;
+    xlsxPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      var timer = setTimeout(fail, 15000);
+      function fail() {
+        clearTimeout(timer);
+        s.onload = s.onerror = null;
+        if (s.parentNode) s.parentNode.removeChild(s);
+        xlsxPromise = null; // keyingi bosishda qayta urinish mumkin
+        reject(new Error('SheetJS yuklanmadi'));
+      }
+      s.src = XLSX_URL;
+      s.async = true;
+      s.onload = function () {
+        clearTimeout(timer);
+        if (window.XLSX && window.XLSX.utils) resolve(window.XLSX); else fail();
+      };
+      s.onerror = fail;
+      document.head.appendChild(s);
+    });
+    return xlsxPromise;
+  }
+
+  // Formula injection himoyasi: = + - @ (tab/CR) bilan boshlansa — oldiga '
+  function safeCell(v) {
+    var str = v === null || v === undefined ? '' : String(v);
+    return /^[=+\-@\t\r]/.test(str) ? "'" + str : str;
+  }
+
+  var EXPORT_HEAD = ['ID', 'Ism', 'Telefon', 'Kurs', 'Guruh', 'Holat', 'Yuborilgan sana', 'Mijoz izohi', 'Admin izohi'];
+  var EXPORT_WIDTHS = [10, 26, 18, 26, 22, 14, 18, 44, 44];
+
+  // phoneAsText: xlsx da telefon matn turidagi katak (formula sifatida talqin qilinmaydi),
+  // shuning uchun "+998..." ko'rinishi buzilmasligi uchun ' qo'shilmaydi
+  function exportRows(list, phoneAsText) {
+    return list.map(function (a) {
+      var g = a.groupId ? byId(state.groups, a.groupId) : null;
+      var date = formatDate(a.createdAt);
+      return [
+        String(a.id),
+        safeCell(a.name),
+        phoneAsText ? String(a.phone || '') : safeCell(a.phone),
+        safeCell(courseName(a.courseId)),
+        g ? safeCell(g.name) : (a.groupId ? "O'chirilgan guruh" : ''),
+        a.status === 'assigned' ? 'Biriktirildi' : 'Yangi',
+        date === '—' ? '' : date,
+        safeCell(a.message || ''),
+        safeCell(a.adminNote || '')
+      ];
+    });
+  }
+
+  function exportFileBase() {
+    var d = new Date();
+    return 'arizalar-' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
+  function downloadBlob(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var link = h('a', { href: url, download: name, style: { display: 'none' } });
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(function () { URL.revokeObjectURL(url); link.remove(); }, 1500);
+  }
+
+  // Zaxira: UTF-8 BOM bilan CSV (Excel to'g'ri kodlashda ochadi)
+  function exportCsv(list) {
+    var rows = [EXPORT_HEAD].concat(exportRows(list, false));
+    var csv = rows.map(function (r) {
+      return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(';');
+    }).join('\r\n');
+    downloadBlob(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), exportFileBase() + '.csv');
+  }
+
+  function exportXlsx(XLSX, list) {
+    var rows = [EXPORT_HEAD].concat(exportRows(list, true));
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    // Barcha kataklar matn turida (son/formula sifatida talqin qilinmaydi)
+    Object.keys(ws).forEach(function (k) {
+      if (k.charAt(0) !== '!' && ws[k]) { ws[k].t = 's'; ws[k].v = String(ws[k].v); }
+    });
+    ws['!cols'] = EXPORT_WIDTHS.map(function (w) { return { wch: w }; });
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length - 1, c: EXPORT_HEAD.length - 1 } }) };
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Arizalar');
+    XLSX.writeFile(wb, exportFileBase() + '.xlsx', { compression: true });
+  }
+
+  $('exportBtn').addEventListener('click', function () {
+    var btn = $('exportBtn');
+    var list = filteredApplications();
+    if (!list.length) { toast("Eksport uchun ariza yo'q", 'info'); return; }
+    btn.disabled = true;
+    loadXlsx().then(function (XLSX) {
+      exportXlsx(XLSX, list);
+      toast(list.length + ' ta ariza Excel faylga yuklandi', 'success');
+    }, function () {
+      exportCsv(list);
+      toast("Excel kutubxonasi yuklanmadi (internet yo'qmi?). CSV fayl yuklandi — Excel'da ochiladi", 'info');
+    }).catch(function (err) {
+      toast('Eksportda xatolik: ' + ((err && err.message) || "noma'lum"), 'error');
+    }).then(function () { btn.disabled = false; });
+  });
+
+  // ---------- Telegram ----------
+  function loadTelegramStatus() {
+    state.telegram.status = 'loading';
+    renderTelegram();
+    return api('GET', '/api/telegram/status').then(function (d) {
+      if (!d || typeof d.configured !== 'boolean') throw new Error("Noto'g'ri javob");
+      state.telegram.status = 'ok';
+      state.telegram.configured = d.configured;
+    }).catch(function () {
+      state.telegram.status = 'error';
+    }).then(renderTelegram);
+  }
+
+  function renderTelegram() {
+    var box = $('tgStatus');
+    var btn = $('tgTestBtn');
+    if (!box || !btn) return;
+    var t = state.telegram;
+    clear(box);
+    if (t.status === 'loading') {
+      append(box, [h('span', { class: 'spinner' }), ' Tekshirilmoqda...']);
+    } else if (t.status === 'error') {
+      append(box, [
+        h('span', { class: 'badge badge-gray', text: "❔ Noma'lum" }),
+        h('span', { class: 'muted', text: "Holatni aniqlab bo'lmadi" })]);
+    } else if (t.configured) {
+      append(box, [
+        h('span', { class: 'badge badge-assigned', text: '✅ Ulangan' }),
+        h('span', { class: 'muted', text: 'Yangi arizalar Telegramga yuboriladi' })]);
+    } else {
+      append(box, [
+        h('span', { class: 'badge badge-gray', text: '⚪ Ulanmagan' }),
+        h('span', { class: 'muted', text: "Sozlash yo'riqnomasi README.md da" })]);
+    }
+    btn.disabled = t.sending || t.status === 'loading';
+    btn.textContent = t.sending ? 'Yuborilmoqda...' : 'Sinov xabarini yuborish';
+  }
+
+  $('tgTestBtn').addEventListener('click', function () {
+    if (state.telegram.sending) return;
+    state.telegram.sending = true;
+    renderTelegram();
+    api('POST', '/api/telegram/test').then(function () {
+      toast('Sinov xabari Telegramga yuborildi', 'success');
+    }).catch(function (err) {
+      if (err && err.handled) return;
+      toast('Telegram: ' + ((err && err.message) || 'Xatolik yuz berdi'), 'error');
+    }).then(function () {
+      state.telegram.sending = false;
+      renderTelegram();
+    });
+  });
 
   // Groups
   function renderGroups() {

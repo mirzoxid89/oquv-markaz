@@ -413,7 +413,8 @@
     var box = $('#formAlert');
     clear(box);
     box.className = 'form__alert form__alert--' + type;
-    box.appendChild(el('span', { 'aria-hidden': 'true', text: type === 'error' ? '⚠️' : '✅' }));
+    var icons = { error: '⚠️', warning: '⏳', info: 'ℹ️', success: '✅' };
+    box.appendChild(el('span', { 'aria-hidden': 'true', text: icons[type] || '✅' }));
     box.appendChild(el('span', { text: message }));
     box.hidden = false;
   }
@@ -445,6 +446,7 @@
     var form = $('#applyForm');
     var btn = $('#submitBtn');
     var submitting = false;
+    var loadedAt = Date.now(); // formTime uchun (spam himoyasi)
 
     $('#fName').addEventListener('input', function (e) { if (e.target.value.trim().length >= 2) clearFieldError('name'); });
     $('#fCourse').addEventListener('change', function (e) { if (e.target.value) clearFieldError('courseId'); });
@@ -468,6 +470,9 @@
 
       var body = { name: data.name, phone: formatPhone(phoneLocalDigits(data.phone)), courseId: data.courseId };
       if (data.message) body.message = data.message;
+      var hp = $('#fWebsite');
+      body.website = hp ? hp.value : '';
+      body.formTime = Date.now() - loadedAt;
 
       submitting = true;
       setSubmitting(btn, true);
@@ -475,14 +480,17 @@
         .then(function () {
           var course = state.courses.filter(function (c) { return str(c.id) === data.courseId; })[0];
           form.reset();
+          loadedAt = Date.now(); // yangi ariza uchun vaqtni qayta boshlash
           ['name', 'phone', 'courseId'].forEach(clearFieldError);
           showAlert('success', 'Rahmat, ' + data.name + '! Arizangiz' + (course ? ' "' + str(course.title) + '" kursiga' : '') +
             " qabul qilindi. Tez orada siz bilan bog'lanamiz.");
           toast('Ariza muvaffaqiyatli yuborildi!', 'success');
         })
         .catch(function (err) {
-          showAlert('error', err.message || "Xatolik yuz berdi. Qayta urinib ko'ring.");
-          toast(err.message || 'Xatolik yuz berdi', 'error');
+          // 409 — ariza allaqachon bor (ma'lumot), 429 — juda ko'p urinish (ogohlantirish). Forma tozalanmaydi.
+          var kind = err && err.status === 409 ? 'info' : err && err.status === 429 ? 'warning' : 'error';
+          showAlert(kind, err.message || "Xatolik yuz berdi. Qayta urinib ko'ring.");
+          toast(err.message || 'Xatolik yuz berdi', kind);
         })
         .finally(function () {
           submitting = false;
