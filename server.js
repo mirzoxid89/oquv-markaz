@@ -46,7 +46,8 @@ function loadEnvFile() {
 // Xeshdan parolni tiklab bo'lmaydi, shuning uchun ochiq repozitoriyda turishi xavfsiz.
 // Parol lokal, Vercel va har qanday boshqa joyda bir xil; .env yoki muhit o'zgaruvchisiga bog'liq emas.
 // Parolni almashtirish kerak bo'lsa: node -e "..." bilan yangi xesh hisoblab, shu qatorni almashtiring.
-const ADMIN_PASSWORD_HASH = 'scrypt$4828e95316ff1e6c20bb34fc36c26831$9ab0958f18d2ccd58f868b05e4612ce66d92ed02421db135d81e1ae718af8e23';
+// NODE_ENV=test bo'lganda (faqat avtomatik testlar) testlar o'z sinov parolining xeshini beradi; ishlab chiqarishda e'tiborga olinmaydi.
+const ADMIN_PASSWORD_HASH = (process.env.NODE_ENV === 'test' && process.env.TEST_ADMIN_PASSWORD_HASH) || 'scrypt$4828e95316ff1e6c20bb34fc36c26831$9ab0958f18d2ccd58f868b05e4612ce66d92ed02421db135d81e1ae718af8e23';
 
 function verifyAdminPassword(pass) {
   const [, saltHex, hashHex] = ADMIN_PASSWORD_HASH.split('$');
@@ -58,7 +59,7 @@ function verifyAdminPassword(pass) {
 loadEnvFile(); // PORT va Redis sozlamalari uchun (parol uchun emas)
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(ROOT, 'public');
-const DATA_DIR = path.join(ROOT, 'data');
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, 'data'); // testlar vaqtinchalik papka beradi
 const MAX_BODY = 1024 * 1024; // ~1MB
 
 // Saqlash: Upstash Redis (Vercel) yoki lokal JSON fayllar.
@@ -88,7 +89,7 @@ const SEED = {
     { id: 't6', name: 'Malika Yusupova', subject: 'Kimyo', experience: 7, bio: 'Tibbiyot oliygohlariga kirish uchun kimyo va biologiyadan tayyorlaydi.', photo: '/img/teachers/t6.jpg' }
   ],
   courses: [
-    { id: 'c1', title: 'Ingliz tili (General English)', description: 'Noldan boshlab so\'zlashuv, grammatika va lug\'at boyligini oshirish. Haftada 3 marta dars.', level: "Boshlang'ich", duration: '6 oy', price: 450000, teacherId: 't1', icon: '🇬🇧' },
+    { id: 'c1', title: 'Ingliz tili (General English)', description: 'Noldan boshlab so\'zlashuv, grammatika va lug\'at boyligini oshirish. Haftada 3 marta dars.', level: "Boshlang'ich", duration: '6 oy', price: 450000, teacherId: 't1', icon: '🌍' },
     { id: 'c2', title: 'IELTS tayyorlov', description: 'Listening, Reading, Writing va Speaking bo\'yicha intensiv tayyorgarlik, haftalik mock imtihonlar.', level: 'Yuqori', duration: '4 oy', price: 650000, teacherId: 't1', icon: '🎓' },
     { id: 'c3', title: 'Matematika (DTM tayyorlov)', description: 'Abituriyentlar uchun test yechish texnikasi va barcha mavzular bo\'yicha chuqur tayyorgarlik.', level: "O'rta", duration: '8 oy', price: 400000, teacherId: 't2', icon: '📐' },
     { id: 'c4', title: 'Frontend dasturlash', description: 'HTML, CSS, JavaScript va React. Kurs oxirida shaxsiy portfolio loyiha.', level: "Boshlang'ich", duration: '6 oy', price: 700000, teacherId: 't3', icon: '💻' },
@@ -384,11 +385,12 @@ async function migrateApplicationIds() {
 }
 
 // ---------------------------------------------------------------- Ariza spam himoyasi
-// IP cheklovi: 10 daqiqada 3 tadan ortiq ariza -> 429. Sanoq faqat HAQIQIY SAQLANGAN arizalar bo'yicha:
+// IP cheklovi: 10 daqiqada 10 tadan ortiq ariza -> 429 (maktab/universitet Wi-Fi'ida ko'p odam bitta IP da
+// bo'lgani uchun limit yumshoqroq; bitta odamning takroriy arizasini esa telefon+kurs tekshiruvi (409) ushlaydi). Sanoq faqat HAQIQIY SAQLANGAN arizalar bo'yicha:
 // saqlashdan oldin atomik "o'rin band qilinadi" (INCR), keyin 429/409 yoki saqlash xatosi bo'lsa o'rin qaytariladi (DECR).
 // Shunda xato to'ldirilgan forma, takroriy ariza yoki bot-tuzoq foydalanuvchini bloklamaydi, lekin
 // parallel so'rovlarda ham limitdan oshib ketib bo'lmaydi. Oyna — birinchi arizadan boshlab 10 daqiqa (fixed window).
-const APP_LIMIT = 3;
+const APP_LIMIT = Number(process.env.APP_LIMIT) || 10;
 const APP_WINDOW_MS = 10 * 60 * 1000;
 const DUP_WINDOW_MS = 24 * 60 * 60 * 1000;
 const appRate = new Map(); // faqat lokal rejimda: ip -> { count, expires }
@@ -889,6 +891,16 @@ async function handleApi(req, res, pathname) {
     throw new HttpError(404, 'Endpoint topilmadi');
   }
 
+  // --- Zaxira nusxa (admin): barcha ma'lumotlar bitta JSON faylda
+  if (resource === 'backup' && !id) {
+    await requireAuth(req);
+    if (method !== 'GET') throw new HttpError(405, 'Metod ruxsat etilmagan');
+    const [courses, teachers, groups, applications] = await Promise.all([
+      load('courses'), load('teachers'), load('groups'), listApps()
+    ]);
+    return sendJson(res, 200, { version: 1, exportedAt: new Date().toISOString(), courses, teachers, groups, applications });
+  }
+
   throw new HttpError(404, 'Endpoint topilmadi');
 }
 
@@ -925,6 +937,7 @@ function serveStatic(req, res, pathname) {
   if (rel.includes('\0')) return send404(res);
   if (rel === '/' || rel === '') rel = '/index.html';
   else if (rel === '/admin' || rel === '/admin/') rel = '/admin/index.html';
+  else if (rel === '/favicon.ico') rel = '/favicon-32.png'; // eski brauzerlar /favicon.ico ni so'raydi
   else if (rel.endsWith('/')) rel += 'index.html';
 
   const full = path.resolve(PUBLIC_DIR, '.' + path.posix.normalize('/' + rel.replace(/\\/g, '/')));

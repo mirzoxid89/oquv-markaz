@@ -697,6 +697,27 @@
     });
   });
 
+  // Zaxira nusxa: barcha ma'lumotlarni JSON fayl qilib yuklab olish
+  $('backupBtn').addEventListener('click', function () {
+    var btn = $('backupBtn');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    var label = btn.textContent;
+    btn.textContent = 'Tayyorlanmoqda...';
+    api('GET', '/api/backup').then(function (data) {
+      var d = new Date();
+      var name = 'zaxira-' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + '.json';
+      downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), name);
+      toast('Zaxira nusxa yuklandi: ' + (data.applications || []).length + ' ta ariza', 'success');
+    }).catch(function (err) {
+      if (err && err.handled) return;
+      toast('Zaxira nusxa: ' + ((err && err.message) || 'Xatolik yuz berdi'), 'error');
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = label;
+    });
+  });
+
   // Groups
   function renderGroups() {
     var grid = clear($('groupsGrid'));

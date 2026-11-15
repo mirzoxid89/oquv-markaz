@@ -30,7 +30,7 @@ Birinchi ishga tushganda `data/` papkasi namunaviy ma'lumotlar bilan yaratiladi.
 ## Ariza formasi himoyasi
 
 - **Bot-tuzoq:** yashirin `website` maydoni to'ldirilgan yoki forma 3 soniyadan tez yuborilgan (`formTime < 3000`) bo'lsa — ariza saqlanmaydi (bot oddiy javob oladi).
-- **IP limiti:** bir IP dan 10 daqiqada 3 tadan ortiq ariza → 429.
+- **IP limiti:** bir IP dan 10 daqiqada 10 tadan ortiq ariza → 429 (maktab Wi-Fi'ida ko'p odam bitta IP da bo'lgani uchun).
 - **Takror ariza:** shu telefon (oxirgi 9 raqam) shu kursga 24 soat ichida qayta yuborsa → 409.
 - Vercel (Redis) rejimida har bir ariza alohida saqlanadi (hash `oquv:apps`), bir vaqtda kelgan arizalar yo'qolmaydi. Eski `oquv:applications` kaliti avtomatik ko'chiriladi.
 
@@ -64,3 +64,15 @@ DESIGN.md            rang va dizayn tizimi
 ```
 
 > Ustozlar rasmlari (`public/img/teachers/`) — randomuser.me dan olingan namunaviy portretlar. Haqiqiy foydalanishda o'z rasmlaringizga almashtiring.
+
+## Testlar
+
+```bash
+npm test
+```
+
+13 ta avtomatik test (`test/api.test.js`): sahifalar, admin kirishi, arizalar, spam himoyasi, guruhga biriktirish, kurslar, zaxira nusxa. Testlar vaqtinchalik papkada ishlaydi — `data/` ga tegmaydi, Telegram'ga xabar yubormaydi.
+
+## Zaxira nusxa
+
+Admin panel → Bosh sahifa → **Zaxira nusxa → Yuklab olish**: barcha ma'lumotlar bitta JSON faylga saqlanadi. Haftada bir marta yuklab olish tavsiya etiladi.

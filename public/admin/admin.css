@@ -595,3 +595,5 @@ input[type="search"]::-webkit-search-cancel-button { filter: invert(1) opacity(.
 @media (max-width: 639.98px) {
   .tg-panel .panel-head .btn { width: 100%; }
 }
+
+.backup-text { margin: 0; font-size: 14px; line-height: 1.5; }

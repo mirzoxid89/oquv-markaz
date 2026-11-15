@@ -78,7 +78,7 @@ Body'ga ikkita yangi maydon qo'shiladi (sayt yuboradi):
 Server tomondagi cheklovlar (yangi xato javoblari):
 | Holat | Status | `error` matni |
 |---|---|---|
-| Bir IP dan 10 daqiqada 3 tadan ortiq ariza | 429 | `Juda ko'p ariza yuborildi. Iltimos, 10 daqiqadan keyin qayta urinib ko'ring` |
+| Bir IP dan 10 daqiqada 10 tadan ortiq ariza (`APP_LIMIT` bilan o'zgartiriladi) | 429 | `Juda ko'p ariza yuborildi. Iltimos, 10 daqiqadan keyin qayta urinib ko'ring` |
 | Shu telefon raqami (faqat raqamlar bo'yicha) shu kursga oxirgi 24 soatda ariza yuborgan | 409 | `Siz bu kursga allaqachon ariza yuborgansiz. Tez orada siz bilan bog'lanamiz` |
 
 Aniqliklar: telefon oxirgi 9 ta raqam bo'yicha solishtiriladi (`+998 90 123 45 67` = `901234567`). IP limiti faqat haqiqatan saqlangan arizalarni sanaydi (400/409/429 va bot-tuzoq javoblari sanalmaydi), oyna — birinchi arizadan boshlab 10 daqiqa. Tekshiruv tartibi: validatsiya (400) → bot (soxta 201) → IP limit (429) → takror (409) → saqlash (201).
@@ -95,3 +95,8 @@ Muhit o'zgaruvchilari: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (lokalda `.env` 
 
 ### 4. Excel eksport
 Faqat admin panel (frontend) — server o'zgarmaydi. Arizalar bo'limida joriy filtrdagi arizalarni `.xlsx` qilib yuklab olish.
+
+### 5. Zaxira nusxa (v3)
+| Metod | Yo'l | Javob |
+|---|---|---|
+| GET | /api/backup (admin) | `{ version, exportedAt, courses, teachers, groups, applications }` |
