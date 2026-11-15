@@ -22,14 +22,48 @@ const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
 
-const PORT = Number(process.env.PORT) || 3000;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const ROOT = __dirname;
+const ENV_FILE = path.join(ROOT, '.env');
+
+// .env faylini o'qish (KEY=VALUE). Muhit o'zgaruvchisi allaqachon berilgan bo'lsa, u ustun turadi.
+function loadEnvFile() {
+  let text;
+  try { text = fs.readFileSync(ENV_FILE, 'utf8'); } catch (_) { return; }
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+    if (!m || line.trim().startsWith('#')) continue;
+    const val = m[2].replace(/^(['"])(.*)\1$/, '$2');
+    if (process.env[m[1]] === undefined) process.env[m[1]] = val;
+  }
+}
+
+// Admin paroli: koddagi standart parol YO'Q. Berilmagan bo'lsa, kuchli tasodifiy parol yaratilib
+// .env ga yoziladi (.env gitignore'da — GitHub'ga chiqmaydi) va konsolga bir marta chiqariladi.
+function resolveAdminPassword() {
+  loadEnvFile();
+  if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
+  const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let pw = '';
+  for (let i = 0; i < 16; i++) pw += ALPHA[crypto.randomInt(ALPHA.length)];
+  fs.appendFileSync(ENV_FILE, `ADMIN_PASSWORD=${pw}\n`, { mode: 0o600 });
+  console.log(`\n  Yangi admin parol yaratildi va .env fayliga yozildi: ${pw}\n`);
+  return pw;
+}
+
+const PORT = Number(process.env.PORT) || 3000;
+const ADMIN_PASSWORD = resolveAdminPassword();
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const MAX_BODY = 1024 * 1024; // ~1MB
 
-const tokens = new Set();
+// Kirish tokenlari: token -> amal qilish muddati (ms). 12 soatdan keyin eskiradi.
+const TOKEN_TTL = 12 * 60 * 60 * 1000;
+const tokens = new Map();
+
+// Parolni taxmin qilishdan himoya: bir IP dan 5 ta noto'g'ri urinish -> 15 daqiqa blok.
+const MAX_FAILS = 5;
+const BLOCK_MS = 15 * 60 * 1000;
+const loginFails = new Map(); // ip -> { count, until }
 
 // ---------------------------------------------------------------- Seed ma'lumot
 const SEED = {
@@ -177,8 +211,15 @@ function readBody(req) {
 function requireAuth(req) {
   const h = req.headers['authorization'] || '';
   const m = /^Bearer\s+(.+)$/i.exec(h);
-  if (!m || !tokens.has(m[1].trim())) throw new HttpError(401, 'Avtorizatsiya talab qilinadi');
+  const token = m ? m[1].trim() : '';
+  const exp = tokens.get(token);
+  if (!exp || exp < Date.now()) {
+    if (exp) tokens.delete(token);
+    throw new HttpError(401, 'Avtorizatsiya talab qilinadi');
+  }
 }
+
+const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest();
 
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 const LEVELS = ["Boshlang'ich", "O'rta", 'Yuqori'];
@@ -227,14 +268,35 @@ async function handleApi(req, res, pathname) {
   // --- login
   if (resource === 'login' && !id) {
     if (method !== 'POST') throw new HttpError(405, 'Metod ruxsat etilmagan');
+    const ip = req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const rec = loginFails.get(ip);
+    if (rec && rec.until > now) {
+      const min = Math.ceil((rec.until - now) / 60000);
+      throw new HttpError(429, `Juda ko'p noto'g'ri urinish. ${min} daqiqadan keyin qayta urinib ko'ring`);
+    }
     const body = await readBody(req);
     const pass = typeof body.password === 'string' ? body.password : '';
-    const a = Buffer.from(pass);
-    const b = Buffer.from(ADMIN_PASSWORD);
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw new HttpError(401, "Parol noto'g'ri");
+    if (!crypto.timingSafeEqual(sha256(pass), sha256(ADMIN_PASSWORD))) {
+      // Blok muddati o'tgan bo'lsa hisob noldan boshlanadi
+      const count = (rec && rec.until === 0 ? rec.count : 0) + 1;
+      loginFails.set(ip, { count, until: count >= MAX_FAILS ? now + BLOCK_MS : 0 });
+      if (count >= MAX_FAILS) console.warn(`[xavfsizlik] ${ip} ${MAX_FAILS} marta noto'g'ri parol kiritdi — 15 daqiqaga bloklandi`);
+      throw new HttpError(401, "Parol noto'g'ri");
+    }
+    loginFails.delete(ip);
+    for (const [t, exp] of tokens) if (exp < now) tokens.delete(t); // eskirganlarni tozalash
     const token = crypto.randomBytes(32).toString('hex');
-    tokens.add(token);
+    tokens.set(token, now + TOKEN_TTL);
     return sendJson(res, 200, { token });
+  }
+
+  // --- logout (tokenni bekor qilish)
+  if (resource === 'logout' && !id) {
+    if (method !== 'POST') throw new HttpError(405, 'Metod ruxsat etilmagan');
+    const m = /^Bearer\s+(.+)$/i.exec(req.headers['authorization'] || '');
+    if (m) tokens.delete(m[1].trim());
+    return sendJson(res, 200, { ok: true });
   }
 
   // --- courses

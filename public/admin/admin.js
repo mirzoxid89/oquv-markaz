@@ -148,6 +148,11 @@
     $('app').hidden = false;
   }
   function logout(expired) {
+    var t = getToken();
+    if (t && !expired) {
+      // Tokenni serverda ham bekor qilamiz (xato bo'lsa ham chiqish davom etadi)
+      fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + t } }).catch(function () {});
+    }
     removeToken();
     closeModal();
     state.loaded = false;

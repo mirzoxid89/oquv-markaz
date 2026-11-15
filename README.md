@@ -13,7 +13,7 @@ npm start        # yoki: node server.js
 ```
 
 - Sayt: http://localhost:3000
-- Admin panel: http://localhost:3000/admin — parol `admin123` (o'zgartirish: `ADMIN_PASSWORD` muhit o'zgaruvchisi)
+- Admin panel: http://localhost:3000/admin — parol `.env` faylidagi `ADMIN_PASSWORD`. Fayl bo'lmasa, birinchi ishga tushganda kuchli tasodifiy parol yaratiladi, `.env` ga yoziladi va konsolda ko'rsatiladi. `.env` GitHub'ga yuklanmaydi.
 - Port: `PORT` muhit o'zgaruvchisi (standart 3000)
 
 Birinchi ishga tushganda `data/` papkasi namunaviy ma'lumotlar bilan yaratiladi.
