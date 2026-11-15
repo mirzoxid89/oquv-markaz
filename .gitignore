@@ -1,0 +1,8 @@
+# Ish vaqtidagi ma'lumotlar (arizachilarning shaxsiy ma'lumotlari). Server ularni seed bilan o'zi yaratadi.
+data/
+*.tmp
+
+node_modules/
+.env
+.DS_Store
+Thumbs.db

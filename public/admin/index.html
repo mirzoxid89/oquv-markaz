@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0A1324">
+  <meta name="color-scheme" content="dark">
+  <title>Admin panel — O'quv markaz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+
+  <!-- LOGIN -->
+  <section id="loginScreen" class="login-screen" hidden>
+    <form id="loginForm" class="login-card" autocomplete="off">
+      <div class="login-logo">🎓</div>
+      <h1>Admin panel</h1>
+      <p class="muted">Davom etish uchun parolni kiriting</p>
+      <label class="field">
+        <span>Parol</span>
+        <input type="password" id="loginPassword" required placeholder="••••••••" autocomplete="current-password">
+      </label>
+      <p id="loginError" class="form-error" hidden></p>
+      <button type="submit" class="btn btn-primary btn-block" id="loginBtn">Kirish</button>
+      <a href="/" class="login-back">← Saytga qaytish</a>
+    </form>
+  </section>
+
+  <!-- APP -->
+  <div id="app" class="app" hidden>
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="brand-icon">🎓</span>
+        <span class="brand-text">O'quv markaz<small>Admin panel</small></span>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-view="dashboard"><span class="nav-ic">📊</span>Bosh sahifa</button>
+        <button class="nav-item" data-view="applications"><span class="nav-ic">📝</span>Arizalar <span class="nav-badge" id="navNewCount" hidden>0</span></button>
+        <button class="nav-item" data-view="groups"><span class="nav-ic">👥</span>Guruhlar</button>
+        <button class="nav-item" data-view="courses"><span class="nav-ic">📚</span>Kurslar</button>
+        <button class="nav-item" data-view="teachers"><span class="nav-ic">👨‍🏫</span>Ustozlar</button>
+      </nav>
+      <div class="sidebar-foot">
+        <a href="/" class="nav-item" target="_blank" rel="noopener"><span class="nav-ic">🌐</span>Saytni ochish</a>
+        <button class="nav-item" id="logoutBtn"><span class="nav-ic">🚪</span>Chiqish</button>
+      </div>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="Menyu" aria-controls="sidebar">☰</button>
+        <h2 id="viewTitle">Bosh sahifa</h2>
+        <div class="topbar-actions">
+          <button class="btn btn-ghost" id="refreshBtn" title="Yangilash">⟳ <span class="hide-sm">Yangilash</span></button>
+        </div>
+      </header>
+
+      <div class="content">
+        <div id="globalLoading" class="loading-box"><span class="spinner"></span> Yuklanmoqda...</div>
+
+        <!-- DASHBOARD -->
+        <section class="view" id="view-dashboard" hidden>
+          <div class="stats" id="statsGrid"></div>
+          <div class="panel">
+            <div class="panel-head"><h3>Guruhlar to'lganlik darajasi</h3></div>
+            <div id="groupFill" class="fill-list"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <h3>So'nggi arizalar</h3>
+              <button class="btn btn-ghost btn-sm" data-goto="applications">Hammasi →</button>
+            </div>
+            <div id="recentApps"></div>
+          </div>
+        </section>
+
+        <!-- APPLICATIONS -->
+        <section class="view" id="view-applications" hidden>
+          <div class="toolbar">
+            <input type="search" id="appSearch" class="input" placeholder="ID, ism yoki telefon bo'yicha qidirish...">
+            <select id="appStatus" class="input">
+              <option value="all">Barcha statuslar</option>
+              <option value="new">Yangi</option>
+              <option value="assigned">Biriktirilgan</option>
+            </select>
+            <select id="appCourse" class="input"></select>
+          </div>
+          <div class="panel no-pad">
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Ism</th><th>Telefon</th><th>Kurs</th><th>Izoh</th><th>Sana</th><th>Status</th><th>Guruh</th><th><span class="sr-only">Amallar</span></th>
+                  </tr>
+                </thead>
+                <tbody id="appTbody"></tbody>
+              </table>
+            </div>
+            <div id="appEmpty" class="empty" hidden></div>
+          </div>
+        </section>
+
+        <!-- GROUPS -->
+        <section class="view" id="view-groups" hidden>
+          <div class="toolbar">
+            <span class="muted" id="groupsCount"></span>
+            <button class="btn btn-primary" id="addGroupBtn">+ Yangi guruh</button>
+          </div>
+          <div class="cards" id="groupsGrid"></div>
+        </section>
+
+        <!-- COURSES -->
+        <section class="view" id="view-courses" hidden>
+          <div class="toolbar">
+            <span class="muted" id="coursesCount"></span>
+            <button class="btn btn-primary" id="addCourseBtn">+ Yangi kurs qo'shish</button>
+          </div>
+          <div class="cards" id="coursesGrid"></div>
+        </section>
+
+        <!-- TEACHERS -->
+        <section class="view" id="view-teachers" hidden>
+          <div class="toolbar">
+            <span class="muted" id="teachersCount"></span>
+            <button class="btn btn-primary" id="addTeacherBtn">+ Ustoz qo'shish</button>
+          </div>
+          <div class="cards" id="teachersGrid"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- MODAL -->
+  <div class="modal" id="modal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-head">
+        <h3 id="modalTitle"></h3>
+        <button class="icon-btn" data-close aria-label="Yopish">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script src="/admin/admin.js"></script>
+</body>
+</html>

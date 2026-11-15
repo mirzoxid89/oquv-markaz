@@ -1,0 +1,5 @@
+{
+  "name": "oquv-markaz",
+  "private": true,
+  "scripts": { "start": "node server.js" }
+}

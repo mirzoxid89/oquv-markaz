@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0A1324">
+  <meta name="color-scheme" content="dark">
+  <title>Bilim Markazi — zamonaviy o'quv markaz</title>
+  <meta name="description" content="Bilim Markazi — dasturlash, chet tillari va boshqa yo'nalishlar bo'yicha zamonaviy o'quv markaz.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header" id="header">
+    <div class="container header__inner">
+      <a href="#hero" class="logo" aria-label="Bilim Markazi bosh sahifa">
+        <span class="logo__mark">B</span>
+        <span class="logo__text">Bilim<span>Markazi</span></span>
+      </a>
+      <nav class="nav" id="nav" aria-label="Asosiy menyu">
+        <a href="#about" class="nav__link">Biz haqimizda</a>
+        <a href="#courses" class="nav__link">Kurslar</a>
+        <a href="#teachers" class="nav__link">Ustozlar</a>
+        <a href="#pricing" class="nav__link">Narxlar</a>
+        <a href="#apply" class="nav__link">Aloqa</a>
+        <a href="#apply" class="btn btn--primary btn--sm nav__cta">Yozilish</a>
+      </nav>
+      <button class="burger" id="burger" aria-label="Menyuni ochish" aria-expanded="false" aria-controls="nav">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero" id="hero">
+      <div class="hero__blob hero__blob--1"></div>
+      <div class="hero__blob hero__blob--2"></div>
+      <div class="container hero__inner">
+        <div class="hero__content">
+          <span class="badge">2026-yil qabul ochiq</span>
+          <h1 class="hero__title">Kelajagingizni <span class="gradient-text">bilim</span> bilan quring</h1>
+          <p class="hero__text">Tajribali ustozlar, amaliy darslar va qulay jadval. Bilim Markazida o'qing — natijani birinchi oydanoq his qiling.</p>
+          <div class="hero__actions">
+            <a href="#apply" class="btn btn--primary btn--lg">Kursga yozilish</a>
+            <a href="#courses" class="btn btn--ghost btn--lg">Kurslarni ko'rish</a>
+          </div>
+          <div class="hero__stats">
+            <div class="stat"><strong id="statCourses">10+</strong><span>kurslar</span></div>
+            <div class="stat"><strong id="statTeachers">15+</strong><span>ustozlar</span></div>
+            <div class="stat"><strong>2 000+</strong><span>bitiruvchilar</span></div>
+          </div>
+        </div>
+        <div class="hero__visual" aria-hidden="true">
+          <div class="hero__card hero__card--main">
+            <div class="hero__card-icon">🎓</div>
+            <div>
+              <strong>Sertifikat</strong>
+              <span>Kurs yakunida beriladi</span>
+            </div>
+          </div>
+          <div class="hero__card hero__card--a">💻 Dasturlash</div>
+          <div class="hero__card hero__card--b">🇬🇧 Ingliz tili</div>
+          <div class="hero__card hero__card--c">📊 Matematika</div>
+          <div class="hero__circle"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- About -->
+    <section class="section" id="about">
+      <div class="container">
+        <div class="section__head">
+          <span class="section__eyebrow">Biz haqimizda</span>
+          <h2 class="section__title">Nega aynan Bilim Markazi?</h2>
+          <p class="section__sub">Biz har bir o'quvchiga individual yondashamiz va bilimni amaliyot bilan mustahkamlaymiz.</p>
+        </div>
+        <div class="features">
+          <div class="feature">
+            <div class="feature__icon" style="--c:var(--primary)">👨‍🏫</div>
+            <h3>Tajribali ustozlar</h3>
+            <p>Sohasining mutaxassislari bo'lgan, ko'p yillik tajribaga ega o'qituvchilar.</p>
+          </div>
+          <div class="feature">
+            <div class="feature__icon" style="--c:var(--info)">🧪</div>
+            <h3>Amaliy darslar</h3>
+            <p>Nazariya emas, real loyihalar va mashqlar orqali o'rganasiz.</p>
+          </div>
+          <div class="feature">
+            <div class="feature__icon" style="--c:var(--warning)">👥</div>
+            <h3>Kichik guruhlar</h3>
+            <p>Har bir guruhda cheklangan o'quvchi — har biriga yetarli e'tibor.</p>
+          </div>
+          <div class="feature">
+            <div class="feature__icon" style="--c:var(--primary-light)">📜</div>
+            <h3>Sertifikat</h3>
+            <p>Kursni muvaffaqiyatli tamomlaganlarga rasmiy sertifikat beriladi.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Courses -->
+    <section class="section section--tint" id="courses">
+      <div class="container">
+        <div class="section__head">
+          <span class="section__eyebrow">Kurslar</span>
+          <h2 class="section__title">O'zingizga mos kursni tanlang</h2>
+        </div>
+        <div class="filters">
+          <div class="search">
+            <span class="search__icon" aria-hidden="true">🔍</span>
+            <input type="search" id="courseSearch" placeholder="Kurs nomi yoki tavsif bo'yicha qidirish..." aria-label="Kurslarni qidirish">
+          </div>
+          <div class="chips" id="levelChips" role="group" aria-label="Daraja bo'yicha filtr">
+            <button class="chip is-active" data-level="">Barchasi</button>
+            <button class="chip" data-level="Boshlang'ich">Boshlang'ich</button>
+            <button class="chip" data-level="O'rta">O'rta</button>
+            <button class="chip" data-level="Yuqori">Yuqori</button>
+          </div>
+        </div>
+        <div class="grid grid--courses" id="coursesGrid" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- Teachers -->
+    <section class="section" id="teachers">
+      <div class="container">
+        <div class="section__head">
+          <span class="section__eyebrow">Ustozlar</span>
+          <h2 class="section__title">Bizning jamoa</h2>
+          <p class="section__sub">Bilimini ulashishni sevadigan professional ustozlar.</p>
+        </div>
+        <div class="grid grid--teachers" id="teachersGrid" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- Pricing -->
+    <section class="section section--tint" id="pricing">
+      <div class="container">
+        <div class="section__head">
+          <span class="section__eyebrow">Narxlar</span>
+          <h2 class="section__title">Shaffof va qulay narxlar</h2>
+          <p class="section__sub">Narxlar bir oy uchun ko'rsatilgan. Yashirin to'lovlar yo'q.</p>
+        </div>
+        <div class="grid grid--pricing" id="pricingGrid" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- Apply -->
+    <section class="section" id="apply">
+      <div class="container apply">
+        <div class="apply__info">
+          <span class="section__eyebrow">Yozilish</span>
+          <h2 class="section__title">Kursga ariza qoldiring</h2>
+          <p class="section__sub">Formani to'ldiring — administratorimiz tez orada siz bilan bog'lanadi va mos guruhni tanlashda yordam beradi.</p>
+          <ul class="apply__list">
+            <li>✅ Birinchi dars — bepul sinov darsi</li>
+            <li>✅ Qulay vaqt va jadval</li>
+            <li>✅ 24 soat ichida javob beramiz</li>
+          </ul>
+        </div>
+        <form class="form" id="applyForm" novalidate>
+          <div class="form__alert" id="formAlert" role="alert" hidden></div>
+          <div class="field">
+            <label for="fName">Ismingiz *</label>
+            <input type="text" id="fName" name="name" placeholder="Masalan: Aziz Karimov" autocomplete="name" maxlength="80">
+            <small class="field__error" data-for="name"></small>
+          </div>
+          <div class="field">
+            <label for="fPhone">Telefon raqam *</label>
+            <input type="tel" id="fPhone" name="phone" placeholder="+998 90 123 45 67" autocomplete="tel" inputmode="tel" maxlength="19">
+            <small class="field__error" data-for="phone"></small>
+          </div>
+          <div class="field">
+            <label for="fCourse">Kurs *</label>
+            <select id="fCourse" name="courseId">
+              <option value="">Yuklanmoqda...</option>
+            </select>
+            <small class="field__error" data-for="courseId"></small>
+          </div>
+          <div class="field">
+            <label for="fMessage">Izoh <span class="muted">(ixtiyoriy)</span></label>
+            <textarea id="fMessage" name="message" rows="3" placeholder="Qulay vaqt yoki savollaringiz..." maxlength="500"></textarea>
+          </div>
+          <button type="submit" class="btn btn--primary btn--lg btn--block" id="submitBtn">
+            <span class="btn__label">Ariza yuborish</span>
+          </button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__col">
+        <a href="#hero" class="logo logo--light">
+          <span class="logo__mark">B</span>
+          <span class="logo__text">Bilim<span>Markazi</span></span>
+        </a>
+        <p class="footer__text">Zamonaviy ta'lim — yorqin kelajak sari birinchi qadam.</p>
+      </div>
+      <div class="footer__col">
+        <h4>Aloqa</h4>
+        <p>📍 Toshkent sh., Chilonzor tumani, Bunyodkor ko'chasi, 12-uy</p>
+        <p>📞 <a href="tel:+998901234567">+998 90 123 45 67</a></p>
+        <p>✉️ <a href="mailto:info@bilimmarkazi.uz">info@bilimmarkazi.uz</a></p>
+      </div>
+      <div class="footer__col">
+        <h4>Ish vaqti</h4>
+        <p>Dushanba – Shanba: 09:00 – 20:00</p>
+        <p>Yakshanba: dam olish kuni</p>
+      </div>
+      <div class="footer__col">
+        <h4>Ijtimoiy tarmoqlar</h4>
+        <div class="socials">
+          <a href="https://t.me/" target="_blank" rel="noopener" aria-label="Telegram" class="social">Telegram</a>
+          <a href="https://instagram.com/" target="_blank" rel="noopener" aria-label="Instagram" class="social">Instagram</a>
+          <a href="https://youtube.com/" target="_blank" rel="noopener" aria-label="YouTube" class="social">YouTube</a>
+          <a href="https://facebook.com/" target="_blank" rel="noopener" aria-label="Facebook" class="social">Facebook</a>
+        </div>
+      </div>
+    </div>
+    <div class="container footer__bottom">
+      <span>© <span id="year">2026</span> Bilim Markazi. Barcha huquqlar himoyalangan.</span>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="/js/site.js"></script>
+</body>
+</html>
