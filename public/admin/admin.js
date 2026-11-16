@@ -56,11 +56,16 @@
     return String(num).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + " so'm";
   }
   function pad(n) { return n < 10 ? '0' + n : String(n); }
+  // Vaqt doim Toshkent bo'yicha (UTC+5, yozgi vaqt yo'q) — qurilmaning soat mintaqasiga bog'liq emas.
+  // Qaytgan sanadan faqat getUTC* bilan o'qiladi.
+  function tashkent(d) { return new Date(d.getTime() + 5 * 60 * 60 * 1000); }
+  function ymd(d) { var t = tashkent(d); return t.getUTCFullYear() + '-' + pad(t.getUTCMonth() + 1) + '-' + pad(t.getUTCDate()); }
   function formatDate(iso) {
     if (!iso) return '—';
     var d = new Date(iso);
     if (isNaN(d.getTime())) return '—';
-    return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    var t = tashkent(d);
+    return pad(t.getUTCDate()) + '.' + pad(t.getUTCMonth() + 1) + '.' + t.getUTCFullYear() + ' ' + pad(t.getUTCHours()) + ':' + pad(t.getUTCMinutes());
   }
   function initials(name) {
     return String(name || '?').trim().split(/\s+/).slice(0, 2).map(function (p) { return p.charAt(0).toUpperCase(); }).join('') || '?';
@@ -598,8 +603,7 @@
   }
 
   function exportFileBase() {
-    var d = new Date();
-    return 'arizalar-' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    return 'arizalar-' + ymd(new Date());
   }
 
   function downloadBlob(blob, name) {
@@ -710,8 +714,7 @@
     var label = btn.textContent;
     btn.textContent = 'Tayyorlanmoqda...';
     api('GET', '/api/backup').then(function (data) {
-      var d = new Date();
-      var name = 'zaxira-' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + '.json';
+      var name = 'zaxira-' + ymd(new Date()) + '.json';
       downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), name);
       toast('Zaxira nusxa yuklandi: ' + (data.applications || []).length + ' ta ariza', 'success');
     }).catch(function (err) {
