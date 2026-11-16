@@ -1,45 +1,45 @@
 /* ==========================================================
-   Admin panel — Dark Navy + Zumrad yashil (DESIGN.md)
+   Admin panel — Ochiq + Zumrad yashil (DESIGN.md)
    Mobile-first: telefon < 640px, planshet 640–1023px, kompyuter ≥ 1024px
    ========================================================== */
 :root {
-  /* Fon qatlamlari (dark navy) */
-  --bg:          #0A1324;
-  --bg-2:        #0E1A30;
-  --surface:     #122140;
-  --surface-2:   #18294D;
-  --border:      #22375F;
-  --border-soft: rgba(148, 180, 230, 0.10);
+  /* Fon qatlamlari (ochiq, yorqin) */
+  --bg:          #F7FAFC;
+  --bg-2:        #EFF5F8;
+  --surface:     #FFFFFF;
+  --surface-2:   #F1F6F9;
+  --border:      #DCE5EE;
+  --border-soft: rgba(15, 23, 42, 0.07);
 
   /* Matn */
-  --text:        #E7EEF9;
-  --text-muted:  #94A6C6;
-  --text-dim:    #6B7FA3;
+  --text:        #1E293B;
+  --text-muted:  #475569;
+  --text-dim:    #64748B;
 
   /* Zumrad yashil (asosiy aksent) */
   --primary:        #10B981;
   --primary-hover:  #0EA371;
   --primary-strong: #059669;
-  --primary-light:  #34D399;
-  --primary-soft:   rgba(16, 185, 129, 0.14);
-  --primary-glow:   0 8px 30px rgba(16, 185, 129, 0.28);
+  --primary-light:  #047857;
+  --primary-soft:   rgba(16, 185, 129, 0.12);
+  --primary-glow:   0 8px 24px rgba(16, 185, 129, 0.25);
   --gradient:       linear-gradient(135deg, #10B981 0%, #0D9488 100%);
 
   /* Holat ranglari */
-  --warning:      #F59E0B;  --warning-soft: rgba(245, 158, 11, 0.14);
-  --danger:       #F43F5E;  --danger-soft:  rgba(244, 63, 94, 0.14);
-  --info:         #38BDF8;  --info-soft:    rgba(56, 189, 248, 0.14);
+  --warning:      #B45309;  --warning-soft: rgba(245, 158, 11, 0.14);
+  --danger:       #E11D48;  --danger-soft:  rgba(244, 63, 94, 0.10);
+  --info:         #0369A1;  --info-soft:    rgba(56, 189, 248, 0.14);
   --success:      var(--primary); --success-soft: var(--primary-soft);
 
   --radius-sm: 8px; --radius: 14px; --radius-lg: 20px;
-  --shadow: 0 10px 30px rgba(2, 8, 23, 0.45);
+  --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   --font: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   /* Admin uchun lokal yordamchilar (faqat tokenlardan) */
   --on-primary: #06231A;
   --sidebar-w: 256px;
   --tap: 44px;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 /* ---------- Base ---------- */
@@ -180,7 +180,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: invert(1) opacity(.
 .app.sidebar-open .sidebar { transform: none; visibility: visible; box-shadow: var(--shadow); }
 .sidebar-backdrop {
   position: fixed; inset: 0; z-index: 30;
-  background: rgba(10, 19, 36, 0.65); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  background: rgba(15, 23, 42, 0.35); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
   opacity: 0; pointer-events: none; transition: opacity .25s;
 }
 .app.sidebar-open .sidebar-backdrop { opacity: 1; pointer-events: auto; }
@@ -220,7 +220,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: invert(1) opacity(.
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg-2); }
 .topbar {
   position: sticky; top: 0; z-index: 20;
-  background: rgba(14, 26, 48, 0.85); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   display: flex; align-items: center; gap: 10px; padding: 10px 16px; min-height: 64px;
   border-bottom: 1px solid var(--border-soft);
 }
@@ -397,7 +397,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: invert(1) opacity(.
 /* ---------- Modal ---------- */
 .modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-end; justify-content: center; padding: 0; }
 .modal-backdrop {
-  position: absolute; inset: 0; background: rgba(10, 19, 36, 0.72);
+  position: absolute; inset: 0; background: rgba(15, 23, 42, 0.40);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fade .15s;
 }
 .modal-dialog {

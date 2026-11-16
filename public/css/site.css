@@ -1,35 +1,35 @@
-/* ===== Bilim Markazi — ommaviy sayt (Dark Navy + Zumrad) ===== */
+/* ===== Bilim Markazi — ommaviy sayt (Ochiq + Zumrad) ===== */
 :root {
-  /* Fon qatlamlari (dark navy) */
-  --bg:          #0A1324;
-  --bg-2:        #0E1A30;
-  --surface:     #122140;
-  --surface-2:   #18294D;
-  --border:      #22375F;
-  --border-soft: rgba(148, 180, 230, 0.10);
+  /* Fon qatlamlari (ochiq, yorqin) */
+  --bg:          #F7FAFC;
+  --bg-2:        #EFF5F8;
+  --surface:     #FFFFFF;
+  --surface-2:   #F1F6F9;
+  --border:      #DCE5EE;
+  --border-soft: rgba(15, 23, 42, 0.07);
 
   /* Matn */
-  --text:        #E7EEF9;
-  --text-muted:  #94A6C6;
-  --text-dim:    #6B7FA3;
+  --text:        #1E293B;
+  --text-muted:  #475569;
+  --text-dim:    #64748B;
 
   /* Zumrad yashil */
   --primary:        #10B981;
   --primary-hover:  #0EA371;
   --primary-strong: #059669;
-  --primary-light:  #34D399;
-  --primary-soft:   rgba(16, 185, 129, 0.14);
-  --primary-glow:   0 8px 30px rgba(16, 185, 129, 0.28);
+  --primary-light:  #047857;
+  --primary-soft:   rgba(16, 185, 129, 0.12);
+  --primary-glow:   0 8px 24px rgba(16, 185, 129, 0.25);
   --gradient:       linear-gradient(135deg, #10B981 0%, #0D9488 100%);
 
   /* Holat ranglari */
-  --warning:      #F59E0B;  --warning-soft: rgba(245, 158, 11, 0.14);
-  --danger:       #F43F5E;  --danger-soft:  rgba(244, 63, 94, 0.14);
-  --info:         #38BDF8;  --info-soft:    rgba(56, 189, 248, 0.14);
+  --warning:      #B45309;  --warning-soft: rgba(245, 158, 11, 0.14);
+  --danger:       #E11D48;  --danger-soft:  rgba(244, 63, 94, 0.10);
+  --info:         #0369A1;  --info-soft:    rgba(56, 189, 248, 0.14);
   --success:      var(--primary); --success-soft: var(--primary-soft);
 
   --radius-sm: 8px; --radius: 14px; --radius-lg: 20px;
-  --shadow: 0 10px 30px rgba(2, 8, 23, 0.45);
+  --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   --font: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   /* Sayt ichki yordamchilari */
@@ -39,7 +39,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: calc(var(--header-h) + 12px); -webkit-text-size-adjust: 100%; color-scheme: dark; }
+html { scroll-behavior: smooth; scroll-padding-top: calc(var(--header-h) + 12px); -webkit-text-size-adjust: 100%; color-scheme: light; }
 body {
   margin: 0;
   font-family: var(--font);
@@ -100,7 +100,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* Blur pseudo-elementda — aks holda fixed menyu header ichida "qamalib" qoladi */
 .header::before {
   content: ""; position: absolute; inset: 0; z-index: -1;
-  background: rgba(10, 19, 36, .82);
+  background: rgba(255, 255, 255, .85);
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
 .header.is-scrolled { border-color: var(--border-soft); box-shadow: var(--shadow); }
@@ -149,8 +149,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .hero {
   position: relative; overflow: hidden; padding: 48px 0 64px;
   background:
-    radial-gradient(60% 50% at 85% 10%, rgba(16, 185, 129, .16) 0%, transparent 70%),
-    radial-gradient(50% 45% at 0% 100%, rgba(13, 148, 136, .14) 0%, transparent 70%),
+    radial-gradient(60% 50% at 85% 10%, rgba(16, 185, 129, .12) 0%, transparent 70%),
+    radial-gradient(50% 45% at 0% 100%, rgba(14, 165, 233, .08) 0%, transparent 70%),
     var(--bg);
   border-bottom: 1px solid var(--border-soft);
 }
@@ -164,8 +164,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   mask-image: radial-gradient(70% 60% at 50% 30%, #000 0%, transparent 80%);
 }
 .hero__blob { position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: 0; }
-.hero__blob--1 { width: 360px; height: 360px; background: rgba(16, 185, 129, .30); top: -140px; right: -120px; }
-.hero__blob--2 { width: 300px; height: 300px; background: rgba(13, 148, 136, .24); bottom: -160px; left: -120px; }
+.hero__blob--1 { width: 360px; height: 360px; background: rgba(16, 185, 129, .18); top: -140px; right: -120px; }
+.hero__blob--2 { width: 300px; height: 300px; background: rgba(56, 189, 248, .14); bottom: -160px; left: -120px; }
 .hero__inner { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; align-items: center; }
 .hero__content { min-width: 0; }
 .badge {
@@ -175,7 +175,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 4px var(--primary-soft); }
 .hero__title { font-size: clamp(2rem, 1.3rem + 3.6vw, 3.8rem); font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
 .gradient-text {
-  background: linear-gradient(135deg, #34D399 0%, #10B981 45%, #0D9488 100%);
+  background: linear-gradient(135deg, #10B981 0%, #059669 50%, #0E7490 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .hero__text { font-size: clamp(1rem, .95rem + .35vw, 1.15rem); color: var(--text-muted); max-width: 560px; }
@@ -192,11 +192,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   height: calc(100% - 64px); width: auto; aspect-ratio: 1 / 1; max-width: calc(100% - 64px);
   border-radius: 50%; background: var(--gradient); opacity: .9;
-  box-shadow: 0 0 80px rgba(16, 185, 129, .35), inset 0 0 40px rgba(10, 19, 36, .35);
+  box-shadow: 0 20px 60px rgba(16, 185, 129, .25), inset 0 0 40px rgba(255, 255, 255, .25);
 }
-.hero__circle::after { content: ""; position: absolute; inset: -18px; border-radius: 50%; border: 1px dashed rgba(52, 211, 153, .35); }
+.hero__circle::after { content: ""; position: absolute; inset: -18px; border-radius: 50%; border: 1px dashed rgba(16, 185, 129, .45); }
 .hero__card {
-  position: absolute; z-index: 2; background: rgba(18, 33, 64, .92); color: var(--text);
+  position: absolute; z-index: 2; background: rgba(255, 255, 255, .95); color: var(--text);
   border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; font-size: .9rem;
   box-shadow: var(--shadow); font-weight: 700; animation: float 6s ease-in-out infinite; white-space: nowrap;
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
