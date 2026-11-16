@@ -47,7 +47,7 @@ function loadEnvFile() {
 // Parol lokal, Vercel va har qanday boshqa joyda bir xil; .env yoki muhit o'zgaruvchisiga bog'liq emas.
 // Parolni almashtirish kerak bo'lsa: node -e "..." bilan yangi xesh hisoblab, shu qatorni almashtiring.
 // NODE_ENV=test bo'lganda (faqat avtomatik testlar) testlar o'z sinov parolining xeshini beradi; ishlab chiqarishda e'tiborga olinmaydi.
-const ADMIN_PASSWORD_HASH = (process.env.NODE_ENV === 'test' && process.env.TEST_ADMIN_PASSWORD_HASH) || 'scrypt$fe29c79df010acfc79cb0d8c6e05cdba$b94c3def82792c652ecf912afadc7789a33db8d8b2e44aa2884121207cf922c5';
+const ADMIN_PASSWORD_HASH = (process.env.NODE_ENV === 'test' && process.env.TEST_ADMIN_PASSWORD_HASH) || 'scrypt$091126e3148d5e833e771e50d5a0ad88$e25552a62eda15e3943bb278f63ff170c53d16a8702a226f040711c48cf0f241';
 
 function verifyAdminPassword(pass) {
   const [, saltHex, hashHex] = ADMIN_PASSWORD_HASH.split('$');
