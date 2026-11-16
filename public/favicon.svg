@@ -1,10 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Bilim Markazi">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#10B981"/>
       <stop offset="1" stop-color="#0D9488"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="14" fill="url(#g)"/>
-  <text x="32" y="45" text-anchor="middle" font-family="Manrope, Segoe UI, Arial, sans-serif" font-size="38" font-weight="800" fill="#06231A">B</text>
+  <rect width="64" height="64" rx="16" fill="url(#lg)"/>
+  <!-- bitiruv shapkasi -->
+  <path d="M32 11 L50 19 L32 27 L14 19 Z" fill="#06231A"/>
+  <path d="M22 23 V29 C22 32 27 34 32 34 C37 34 42 32 42 29 V23 L32 27.5 Z" fill="#06231A"/>
+  <path d="M48 20 V28" stroke="#06231A" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="48" cy="29.5" r="2" fill="#06231A"/>
+  <!-- ochiq kitob -->
+  <path d="M32 41 C27 37.5 20 36.5 13 37.5 V52 C20 51 27 52 32 55.5 Z" fill="#ECFDF5"/>
+  <path d="M32 41 C37 37.5 44 36.5 51 37.5 V52 C44 51 37 52 32 55.5 Z" fill="#D1FAE5"/>
+  <path d="M32 41 V55.5" stroke="#06231A" stroke-width="1.6"/>
 </svg>
