@@ -290,6 +290,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: invert(1) opacity(.
 .cell-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .group-select { min-width: 190px; min-height: 38px; padding: 6px 34px 6px 10px; font-size: 13px; }
 .assign-cell { display: flex; gap: 6px; align-items: center; }
+.assign-cell .btn-new-group { white-space: nowrap; flex-shrink: 0; }
 
 /* Telefon: jadval qatorlari karta ko'rinishida */
 @media (max-width: 639.98px) {

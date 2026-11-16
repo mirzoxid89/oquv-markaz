@@ -425,7 +425,7 @@
   function appRow(a, counts) {
     var groups = state.groups.filter(function (g) { return g.courseId === a.courseId; });
     var sel = h('select', { class: 'input group-select', 'aria-label': 'Guruh tanlash' });
-    sel.appendChild(h('option', { value: '', text: groups.length ? '— Guruhga biriktirish —' : "Bu kurs uchun guruh yo'q" }));
+    sel.appendChild(h('option', { value: '', text: groups.length ? '— Guruhga biriktirish —' : "Guruh yo'q — avval guruh oching" }));
     groups.forEach(function (g) {
       var c = counts[g.id] || 0;
       var cap = Number(g.capacity) || 0;
@@ -439,6 +439,7 @@
     }
     sel.value = a.groupId || '';
     sel.disabled = !groups.length && !a.groupId;
+    if (!groups.length) sel.title = "Bu kurs uchun hali guruh ochilmagan. Guruhlar bo'limida yangi guruh oching.";
     sel.addEventListener('change', function () {
       var val = sel.value || null;
       if (val === (a.groupId || null)) return;
@@ -447,6 +448,10 @@
 
     var unassignBtn = a.groupId
       ? h('button', { class: 'btn btn-ghost btn-sm', title: 'Biriktirishni bekor qilish', 'aria-label': 'Biriktirishni bekor qilish', text: '✕', onclick: function (e) { assign(a, null, e.currentTarget); } })
+      : null;
+    // Kurs uchun hali guruh bo'lmasa — shu yerning o'zidan guruh ochish
+    var newGroupBtn = !groups.length && byId(state.courses, a.courseId)
+      ? h('button', { type: 'button', class: 'btn btn-ghost btn-sm btn-new-group', title: courseName(a.courseId) + ' kursi uchun yangi guruh ochish', text: '+ Guruh ochish', onclick: function () { openGroupForm({ courseId: a.courseId }); } })
       : null;
 
     return h('tr', { class: state.justSeen[a.id] ? 'row-fresh' : null },
@@ -460,7 +465,7 @@
       h('td', { class: 'cell-msg', 'data-label': 'Izoh', title: a.message || '', text: a.message || '—' }),
       h('td', { class: 'cell-nowrap muted', 'data-label': 'Sana', text: formatDate(a.createdAt) }),
       h('td', { 'data-label': 'Status' }, statusSelect(a)),
-      h('td', { 'data-label': 'Guruh' }, h('div', { class: 'assign-cell' }, sel, unassignBtn)),
+      h('td', { 'data-label': 'Guruh' }, h('div', { class: 'assign-cell' }, sel, newGroupBtn, unassignBtn)),
       h('td', { class: 'cell-actions-td' }, h('div', { class: 'cell-actions' },
         h('button', { class: 'btn btn-ghost btn-sm', text: "Ko'rish", onclick: function () { openApplication(a.id); } }),
         h('button', { class: 'btn btn-danger-ghost btn-sm', text: "O'chirish", onclick: function () { deleteApplication(a); } }))));
@@ -767,11 +772,13 @@
     });
   }
 
-  function openGroupForm() {
+  // prefill (ixtiyoriy): { courseId } — masalan, arizalar jadvalidan ochilganda
+  function openGroupForm(prefill) {
     if (!state.courses.length) { toast("Avval kurs qo'shing", 'error'); return; }
+    var preCourse = prefill && typeof prefill.courseId === 'string' ? prefill.courseId : null;
     var form = h('form', { novalidate: true },
       field('Guruh nomi', h('input', { name: 'name', required: true, placeholder: 'Masalan: Frontend-1' })),
-      field('Kurs', selectOf('courseId', state.courses.map(function (c) { return [c.id, c.title]; }), null, true)),
+      field('Kurs', selectOf('courseId', state.courses.map(function (c) { return [c.id, c.title]; }), preCourse, true)),
       field('Ustoz', selectOf('teacherId', state.teachers.map(function (t) { return [t.id, t.name + (t.subject ? ' — ' + t.subject : '')]; }), null, true)),
       h('div', { class: 'form-row' },
         field('Jadval', h('input', { name: 'schedule', required: true, placeholder: 'Du-Chor-Ju 14:00' })),
@@ -805,7 +812,7 @@
     });
     openModal('Yangi guruh', form);
   }
-  $('addGroupBtn').addEventListener('click', openGroupForm);
+  $('addGroupBtn').addEventListener('click', function () { openGroupForm(); });
 
   // Courses
   function renderCourses() {
